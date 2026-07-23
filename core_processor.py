@@ -494,7 +494,53 @@ def extract_subtitle(session_id: str = "") -> Optional[str]:
                         pass
     return None
 
-# Main Video/Audio Transcribe Function (4-Tier Cascade Engine: Sub-First -> Video OCR -> Whisper -> Gemini)
+def transcribe_audio_with_gemini(audio_path: str, api_key: str) -> Optional[str]:
+    """Transcribes audio file directly using Gemini 2.0 Flash Audio Multimodal API in ~1.5s."""
+    if not api_key or not os.path.exists(audio_path):
+        return None
+    try:
+        with open(audio_path, "rb") as f:
+            audio_bytes = f.read()
+        if not audio_bytes or len(audio_bytes) < 1000 or len(audio_bytes) > 20 * 1024 * 1024:
+            return None
+
+        b64_audio = base64.b64encode(audio_bytes).decode("utf-8")
+        ext = os.path.splitext(audio_path)[1].lower().replace('.', '')
+        mime_type = f"audio/{ext}" if ext in ['mp3', 'wav', 'm4a', 'ogg', 'aac'] else "audio/mp3"
+
+        prompt = "Hãy chép lại chính xác 100% toàn bộ lời thoại tiếng Việt trong file âm thanh này. Chỉ trả về lời thoại thuần túy, không tóm tắt, không thêm bình luận."
+
+        data = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": b64_audio
+                        }
+                    }
+                ]
+            }]
+        }
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(data).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            response = json.loads(resp.read().decode("utf-8"))
+        output = response["candidates"][0]["content"]["parts"][0]["text"].strip()
+        if output and len(output.split()) >= 3:
+            return output
+    except Exception as e:
+        pass
+    return None
+
+# Main Video/Audio Transcribe Function (4-Tier Cascade Engine: Sub-First -> Video OCR -> Gemini ASR -> Whisper)
 def process_transcription(
     url: str,
     language: str = "Vietnamese",
@@ -513,7 +559,7 @@ def process_transcription(
 
     # Step 1: Download Audio & Video via Bulletproof Downloader
     audio_path, sub_text, video_path = download_audio_direct(url)
-    
+
     if (not audio_path or not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000) and not sub_text:
         return {"error": "Không thể tải audio từ video. Vui lòng kiểm tra lại đường link hoặc thử link khác!"}
 
@@ -540,10 +586,19 @@ def process_transcription(
         except Exception:
             comment_bubble_text = ""
 
-    # TIER 3: WHISPER AI ASR ENGINE - Audio Speech Recognition
+    # TIER 3A: GEMINI MULTIMODAL AUDIO ASR (1.5s Ultra-Fast Cloud Speech AI)
+    if not final_text and audio_path and os.path.exists(audio_path):
+        gem_key = get_gemini_key()
+        if gem_key:
+            gem_asr = transcribe_audio_with_gemini(audio_path, gem_key)
+            if gem_asr:
+                final_text = gem_asr
+                method = "Gemini AI Audio ASR (Siêu Tốc 1.5s)"
+
+    # TIER 3B: WHISPER AI ASR ENGINE - Local Audio Speech Recognition Fallback
     if not final_text:
         if not audio_path or not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
-            return {"error": "Không thể nạp audio cho Whisper nhận dạng!"}
+            return {"error": "Không thể nạp audio cho nhận dạng âm thanh!"}
 
         try:
             model = get_whisper_model(model_type)
@@ -563,7 +618,6 @@ def process_transcription(
             final_text = whisper_text
             method = f"Whisper AI ({model_type})"
         except Exception as err:
-            # Automatic Fallback to Video OCR if audio is zero-length or PyTorch tensor reshapes 0 elements
             if video_path and os.path.exists(video_path):
                 ocr_fallback = extract_video_ocr_subtitles(video_path)
                 if ocr_fallback:
