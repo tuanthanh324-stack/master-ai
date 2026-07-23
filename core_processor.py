@@ -194,14 +194,14 @@ def download_tiktok_api(url: str, output_mp3: str) -> Tuple[bool, Optional[str]]
             video_url = v_data.get("play") or v_data.get("wmplay")
             audio_url = v_data.get("music") or video_url
             
-            # Download video chunk for RapidOCR burned-in subtitle scanning
+            # Download full intact video for RapidOCR burned-in subtitle scanning
             if video_url:
                 if not video_url.startswith("http"):
                     video_url = f"https://www.tikwm.com{video_url}"
                 try:
                     req_v = urllib.request.Request(video_url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.tikwm.com/"})
-                    with urllib.request.urlopen(req_v, timeout=5) as r_in, open(tik_mp4, "wb") as f_out:
-                        f_out.write(r_in.read(6 * 1024 * 1024))
+                    with urllib.request.urlopen(req_v, timeout=7) as r_in, open(tik_mp4, "wb") as f_out:
+                        f_out.write(r_in.read())
                 except Exception:
                     pass
 
@@ -234,8 +234,8 @@ def download_tiktok_api(url: str, output_mp3: str) -> Tuple[bool, Optional[str]]
                     video_url = f"https://api.tikwm.com{video_url}"
                 try:
                     req_v = urllib.request.Request(video_url, headers={"User-Agent": "Mozilla/5.0"})
-                    with urllib.request.urlopen(req_v, timeout=5) as r_in, open(tik_mp4, "wb") as f_out:
-                        f_out.write(r_in.read(6 * 1024 * 1024))
+                    with urllib.request.urlopen(req_v, timeout=7) as r_in, open(tik_mp4, "wb") as f_out:
+                        f_out.write(r_in.read())
                 except Exception:
                     pass
 
