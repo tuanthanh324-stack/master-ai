@@ -24,15 +24,15 @@ CONFIG_FILE = SCRIPT_DIR / "config.json"
 # FFmpeg auto-detect
 # ============================================
 def get_ffmpeg() -> str:
-    """Lấy đường dẫn FFmpeg với nhiều fallback."""
-    # 1. Local bundled
-    if FFMPEG_PATH.exists():
-        return str(FFMPEG_PATH)
-
-    # 2. System PATH
+    """Lấy đường dẫn FFmpeg với nhiều fallback (Tối ưu Linux / Cloud)."""
+    # 1. System PATH (highest priority on Linux / Render)
     ffmpeg_system = shutil.which("ffmpeg")
     if ffmpeg_system:
         return ffmpeg_system
+
+    # 2. Local bundled (Windows)
+    if FFMPEG_PATH.exists() and os.name == 'nt':
+        return str(FFMPEG_PATH)
 
     # 3. Common Windows locations
     common_paths = [
