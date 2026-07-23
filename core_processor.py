@@ -775,10 +775,15 @@ def format_solution_4steps(raw_solution: str) -> str:
             step3 = "Thực hiện phép tính biến đổi đại số."
             step4 = "Kết quả đã được xác minh chính xác."
 
-    res1 = f"Bước 1: Phân tích & Giả thiết: {re.sub(r'^Bước 1[:\s]*', '', step1.strip())}"
-    res2 = f"Bước 2: Công thức & Phương pháp: {re.sub(r'^Bước 2[:\s]*', '', step2.strip())}"
-    res3 = f"Bước 3: Thực hiện tính toán: {re.sub(r'^Bước 3[:\s]*', '', step3.strip())}"
-    res4 = f"Bước 4: Kết luận & Đáp án: {re.sub(r'^Bước 4[:\s]*', '', step4.strip())}"
+    val1 = re.sub(r'^Bước 1[:\s]*', '', step1.strip())
+    val2 = re.sub(r'^Bước 2[:\s]*', '', step2.strip())
+    val3 = re.sub(r'^Bước 3[:\s]*', '', step3.strip())
+    val4 = re.sub(r'^Bước 4[:\s]*', '', step4.strip())
+
+    res1 = f"Bước 1: Phân tích & Giả thiết: {val1}"
+    res2 = f"Bước 2: Công thức & Phương pháp: {val2}"
+    res3 = f"Bước 3: Thực hiện tính toán: {val3}"
+    res4 = f"Bước 4: Kết luận & Đáp án: {val4}"
     
     return f"{res1}\n{res2}\n{res3}\n{res4}"
 
