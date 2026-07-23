@@ -595,25 +595,32 @@ def process_transcription(
                 final_text = gem_asr
                 method = "Gemini AI Audio ASR (Siêu Tốc 1.5s)"
 
-    # TIER 3B: WHISPER AI ASR ENGINE - Local Audio Speech Recognition Fallback
+    # TIER 3B: WHISPER AI ASR ENGINE - Local Audio Speech Recognition Fallback (Capped at 6s timeout)
     if not final_text:
         if not audio_path or not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
             return {"error": "Không thể nạp audio cho nhận dạng âm thanh!"}
 
         try:
-            model = get_whisper_model(model_type)
-            result = model.transcribe(
-                audio_path,
-                language=lang_code,
-                fp16=False,
-                beam_size=1,
-                best_of=1,
-                temperature=0,
-                condition_on_previous_text=False,
-                compression_ratio_threshold=2.4,
-                no_speech_threshold=0.6,
-                logprob_threshold=-1.0
-            )
+            import concurrent.futures
+            def _run_whisper():
+                model = get_whisper_model(model_type)
+                return model.transcribe(
+                    audio_path,
+                    language=lang_code,
+                    fp16=False,
+                    beam_size=1,
+                    best_of=1,
+                    temperature=0,
+                    condition_on_previous_text=False,
+                    compression_ratio_threshold=2.4,
+                    no_speech_threshold=0.6,
+                    logprob_threshold=-1.0
+                )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_run_whisper)
+                result = future.result(timeout=6.0)
+
             whisper_text = result.get("text", "").strip()
             final_text = whisper_text
             method = f"Whisper AI ({model_type})"
@@ -622,9 +629,9 @@ def process_transcription(
                 ocr_fallback = extract_video_ocr_subtitles(video_path)
                 if ocr_fallback:
                     final_text = ocr_fallback
-                    method = "Phụ đề Màn hình OCR (RapidOCR Auto Fallback)"
+                    method = "Phụ đề Màn hình OCR (Siêu Tốc Auto Fallback)"
             if not final_text:
-                return {"error": f"Video rỗng hoặc không chứa âm thanh thoại hợp lệ. Vui lòng kiểm tra lại video!"}
+                return {"error": "Máy chủ Đám mây quá tải âm thanh hoặc Video không chứa thoại. Vui lòng gắn API Key Gemini trong Cài đặt để xử lý Siêu Tốc 1.5s!"}
 
     # Attach Comment Bubble Context if found
     if comment_bubble_text:
