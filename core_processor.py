@@ -174,8 +174,9 @@ def normalize_url(raw_url: str) -> str:
     return url
 
 def download_tiktok_api(url: str, output_mp3: str) -> Tuple[bool, Optional[str]]:
-    """Fast TikTok audio downloader using multi-mirror API endpoints with 3.5s timeout."""
+    """Fast TikTok video & audio downloader using multi-mirror API endpoints with 3.5s timeout."""
     clean_url = normalize_url(url)
+    tik_mp4 = os.path.join(TEMP_DIR, "tikwm_temp.mp4")
     
     # Mirror 1: TikWM API
     try:
@@ -190,7 +191,20 @@ def download_tiktok_api(url: str, output_mp3: str) -> Tuple[bool, Optional[str]]
         if data.get("code") == 0 and "data" in data:
             v_data = data["data"]
             title = v_data.get("title", "")
-            audio_url = v_data.get("music") or v_data.get("play")
+            video_url = v_data.get("play") or v_data.get("wmplay")
+            audio_url = v_data.get("music") or video_url
+            
+            # Download video chunk for RapidOCR burned-in subtitle scanning
+            if video_url:
+                if not video_url.startswith("http"):
+                    video_url = f"https://www.tikwm.com{video_url}"
+                try:
+                    req_v = urllib.request.Request(video_url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.tikwm.com/"})
+                    with urllib.request.urlopen(req_v, timeout=5) as r_in, open(tik_mp4, "wb") as f_out:
+                        f_out.write(r_in.read(6 * 1024 * 1024))
+                except Exception:
+                    pass
+
             if audio_url:
                 if not audio_url.startswith("http"):
                     audio_url = f"https://www.tikwm.com{audio_url}"
@@ -211,13 +225,26 @@ def download_tiktok_api(url: str, output_mp3: str) -> Tuple[bool, Optional[str]]
         with urllib.request.urlopen(req, timeout=3.5) as resp:
             data = json.loads(resp.read().decode('utf-8'))
         if data.get("code") == 0 and "data" in data:
-            audio_url = data["data"].get("music") or data["data"].get("play")
+            v_data = data["data"]
+            video_url = v_data.get("play") or v_data.get("wmplay")
+            audio_url = v_data.get("music") or video_url
+
+            if video_url:
+                if not video_url.startswith("http"):
+                    video_url = f"https://api.tikwm.com{video_url}"
+                try:
+                    req_v = urllib.request.Request(video_url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req_v, timeout=5) as r_in, open(tik_mp4, "wb") as f_out:
+                        f_out.write(r_in.read(6 * 1024 * 1024))
+                except Exception:
+                    pass
+
             if audio_url:
                 req_audio = urllib.request.Request(audio_url, headers={"User-Agent": "Mozilla/5.0"})
                 with urllib.request.urlopen(req_audio, timeout=6) as r_in, open(output_mp3, "wb") as f_out:
                     f_out.write(r_in.read())
                 if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
-                    return True, data["data"].get("title", "")
+                    return True, v_data.get("title", "")
     except Exception:
         pass
 
