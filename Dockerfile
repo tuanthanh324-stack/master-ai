@@ -1,5 +1,5 @@
 # ============================================
-# DOCKERFILE - Deploy lên cloud
+# DOCKERFILE - Deploy lên cloud (Render / HuggingFace)
 # ============================================
 FROM python:3.11-slim
 
@@ -26,9 +26,10 @@ COPY . .
 RUN mkdir -p temp logs assets/bgm
 
 # Env vars
+ENV PORT=7860
+ENV MASTERAI_PORT=7860
 ENV MASTERAI_WHISPER_MODEL=tiny
 ENV MASTERAI_LOG_LEVEL=INFO
-ENV MASTERAI_PORT=7860
 
 EXPOSE 7860
 

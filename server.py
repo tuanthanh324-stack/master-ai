@@ -610,10 +610,11 @@ class MasterAIHandler(SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
 
 def run_server():
-    server_address = ('', PORT)
+    port = int(os.environ.get("PORT", os.environ.get("MASTERAI_PORT", 7860)))
+    server_address = ('0.0.0.0', port)
     httpd = ThreadedHTTPServer(server_address, MasterAIHandler)
     print(f"==================================================")
-    print(f"MASTER AI SERVER CHAY TAI: http://127.0.0.1:{PORT}")
+    print(f"MASTER AI SERVER CHAY TAI: http://0.0.0.0:{port}")
     print(f"==================================================")
     try:
         httpd.serve_forever()
