@@ -54,7 +54,7 @@ from auto_cleanup import start_auto_cleanup
 start_auto_cleanup(interval_hours=1.0)
 
 WEB_DIR = os.path.join(SCRIPT_DIR, "web")
-PORT = 7860
+PORT = int(os.environ.get("PORT", os.environ.get("MASTERAI_PORT", 7860)))
 
 def auto_open_browser():
     time.sleep(0.8)
