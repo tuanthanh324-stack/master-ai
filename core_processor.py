@@ -675,7 +675,7 @@ def process_transcription(
     comment_bubble_text = ""
 
     # TIER 1: FAST-TRACK ENGINE - Soft Subtitles (.vtt/.srt) (0.3s)
-    if use_sub and sub_text and len(sub_text.split()) >= 10:
+    if use_sub and sub_text and len(sub_text.split()) >= 3:
         final_text = sub_text
         method = "Phụ đề Gốc VTT/SRT (Siêu Tốc 0.3s)"
 
