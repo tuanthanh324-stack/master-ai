@@ -51,8 +51,9 @@ def get_whisper_model() -> Tuple[Any, str]:
                 logger.info(f"Standard OpenAI Whisper loaded in {elapsed:.1f}s")
                 return _whisper_model, _whisper_engine_type
             except Exception as err:
-                logger.error(f"Failed to load any Whisper model: {err}")
-                raise err
+                logger.warning(f"Whisper engine fallback unavailable ({err}) - Subtitle & OCR engines active")
+                _whisper_engine_type = "none"
+                return None, "none"
 
     return _whisper_model, _whisper_engine_type
 

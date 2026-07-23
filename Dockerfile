@@ -12,6 +12,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install PyTorch CPU-only lightweight binary
+RUN pip install --no-cache-dir torch --extra-index-url https://download.pytorch.org/whl/cpu
+
 # Copy requirements first (for caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

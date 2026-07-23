@@ -1,5 +1,3 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
 openai-whisper>=20231117
 yt-dlp>=2023.12.30
 edge-tts>=6.1.12
