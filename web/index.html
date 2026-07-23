@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MASTER AI PRO - Video to Text, TTS & Voice Miner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="light-theme">
+    <header class="app-header">
+        <div class="brand">
+            <div class="logo-icon">⚡</div>
+            <h1>MASTER AI <span>PRO</span></h1>
+        </div>
+        <div class="header-actions">
+            <button id="btnSettings" class="icon-btn" title="Cài đặt API Key & Cấu hình">⚙️ Cài đặt</button>
+            <button id="btnThemeToggle" class="icon-btn" title="Đổi giao diện Tối/Sáng">🌙</button>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Hero Input Card -->
+        <section class="hero-card">
+            <div class="input-group">
+                <div class="url-input-wrapper">
+                    <span class="link-icon">🔗</span>
+                    <input type="text" id="videoUrl" placeholder="Dán link video TikTok, YouTube, Facebook, Instagram..." autocomplete="off">
+                    <button id="btnClearUrl" class="clear-url-btn" title="Xóa link">&times;</button>
+                </div>
+                <button id="btnProcess" class="btn-primary">
+                    <span class="btn-text">XỬ LÝ NGAY</span>
+                    <span class="spinner" id="processSpinner"></span>
+                </button>
+            </div>
+
+            <!-- Quick Options Toolbar -->
+            <div class="quick-toolbar">
+                <div class="toolbar-item">
+                    <label>Ngôn ngữ:</label>
+                    <select id="selLang">
+                        <option value="Vietnamese">Tiếng Việt</option>
+                        <option value="English">English</option>
+                        <option value="Spanish">Español</option>
+                        <option value="French">Français</option>
+                        <option value="German">Deutsch</option>
+                    </select>
+                </div>
+
+                <div class="toolbar-item">
+                    <label>Model Whisper:</label>
+                    <select id="selModel">
+                        <option value="Draft" selected>🚀 Siêu Nhanh (Tiny - 1s)</option>
+                        <option value="Standard">⚡ Chuẩn (Small - 100% Chính xác)</option>
+                        <option value="Professional">🎓 Cao cấp (Medium)</option>
+                        <option value="Premium">💎 Siêu cấp (Large)</option>
+                    </select>
+                </div>
+
+                <div class="toolbar-item">
+                    <label>Chế độ AI (Gemini):</label>
+                    <select id="selMode">
+                        <option value="verbatim" selected>📜 Bảo toàn 100% Lời thoại</option>
+                        <option value="summary">✍️ Biên tập & Tóm tắt Ý chính</option>
+                        <option value="social">📱 Viết Bài TikTok / FB / Reels</option>
+                        <option value="lecture">🎓 Tóm tắt Bài giảng / Học tập</option>
+                    </select>
+                </div>
+
+                <div class="toolbar-item toggle-item">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="chkAutoGemini" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label">Tự động Chuẩn hóa AI</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slim Progress Bar with Live Timer -->
+        <div id="statusBanner" class="status-banner-slim">
+            <div class="status-content">
+                <span class="pulse-dot" id="statusDot"></span>
+                <span id="statusMessage" class="status-text">Sẵn sàng nhập link video để chuyển đổi...</span>
+                <div class="timer-group">
+                    <span id="timerText" class="timer-tag">⏱️ 00:00s</span>
+                    <span id="progressPercent" class="percent-text">0%</span>
+                </div>
+            </div>
+            <div class="progress-bar-track">
+                <div id="progressBarFill" class="progress-bar-fill"></div>
+            </div>
+        </div>
+
+        <!-- 2-Panel Workspace: Stage 1 & Stage 2 -->
+        <section class="workspace">
+            <!-- Left Panel: Stage 1 Whisper Raw Result -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <span class="badge badge-purple">STAGE 1</span>
+                        <h2>WHISPER <span>Nội dung thô</span></h2>
+                    </div>
+                    <span id="whisperWordCount" class="counter-tag">0 từ</span>
+                </div>
+                
+                <div class="output-container">
+                    <textarea id="txtWhisper" placeholder="Kết quả trích xuất văn bản từ video sẽ hiển thị ở đây..."></textarea>
+                </div>
+
+                <div class="panel-footer">
+                    <button id="btnCopyWhisper" class="btn-sub">📋 Copy</button>
+                    <button id="btnDownloadWhisper" class="btn-sub">💾 Tải .txt</button>
+                    <button id="btnClearWhisper" class="btn-sub danger">🧹 Xóa</button>
+                </div>
+            </div>
+
+            <div class="pipeline-arrow">
+                <div class="arrow-circle">➔</div>
+            </div>
+
+            <!-- Right Panel: Stage 2 Gemini AI Polished Result -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <span class="badge badge-green">STAGE 2</span>
+                        <h2>GEMINI AI <span>Chuẩn hóa & Biên tập</span></h2>
+                    </div>
+                    <span id="geminiWordCount" class="counter-tag">0 từ</span>
+                </div>
+
+                <!-- Custom Prompt Bar -->
+                <div class="prompt-bar">
+                    <input type="text" id="customPrompt" placeholder="Prompt tùy chỉnh (VD: Viết lại mượt mà, phân đoạn rõ ràng...)">
+                    <button id="btnRunGemini" class="btn-accent">
+                        <span>CHUẨN HÓA LẠI</span>
+                    </button>
+                </div>
+
+                <div class="output-container">
+                    <textarea id="txtGemini" placeholder="Kết quả Gemini AI sửa lỗi chính tả và chuẩn hóa sẽ hiển thị tại đây..."></textarea>
+                </div>
+
+                <div class="panel-footer">
+                    <button id="btnCopyGemini" class="btn-sub">📋 Copy</button>
+                    <button id="btnDownloadGemini" class="btn-sub">💾 Tải .txt</button>
+                    <button id="btnClearGemini" class="btn-sub danger">🧹 Xóa</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- STAGE 3: Slim TTS & BGM Mixer Toolbar -->
+        <section class="section-card slim-card" id="stage3Card">
+            <div class="section-header-compact">
+                <span class="badge badge-orange">STAGE 3</span>
+                <h2>LỒNG TIẾNG AI <span>& BGM</span></h2>
+            </div>
+            
+            <div class="tts-compact-row">
+                <div class="select-wrapper voice-select-wrapper">
+                    <select id="selVoice">
+                        <optgroup label="🇻🇳 GIỌNG CHÍNH TIẾNG VIỆT (KHÔNG CẦN API KEY)">
+                            <option value="vi-VN-NamMinhNeural" selected>👨 [Studio] Nam Minh - Nam Kịch Tính (Mặc Định)</option>
+                            <option value="vi-VN-HoaiMyNeural">👩 [Studio] Hoài Mỹ - Nữ Truyền Cảm</option>
+                            <option value="tiktok-male-young">⚡ [TikTok] Nam Trẻ - Review Phim</option>
+                            <option value="tiktok-female-high">🔥 [TikTok] Nữ Cao - Viral Hot</option>
+                            <option value="tiktok-chipmunk">🐿️ [TikTok] Chipmunk - Hài Hước</option>
+                            <option value="vi-Google-ChiGoogle">🤖 [Meme] Chị Google</option>
+                        </optgroup>
+                        <optgroup label="⭐ GIỌNG VIDEO GỐC (TỰ ĐỘNG NHÂN BẢN)">
+                            <option value="original">🎵 [Gốc] Audio Video Gốc</option>
+                        </optgroup>
+                        <optgroup label="✨ GIỌNG ELEVENLABS & TIẾNG ANH (TÙY CHỌN)">
+                            <option value="el-Adam">✨ [EL] Adam - Nam Trầm (Review/Drama)</option>
+                            <option value="el-Liam">✨ [EL] Liam - Nam Trẻ (TikTok Review)</option>
+                            <option value="el-George">✨ [EL] George - Nam Ấm (Kể Chuyện)</option>
+                            <option value="el-Brian">✨ [EL] Brian - Nam Sâu (Tin Tức)</option>
+                            <option value="el-Lily">✨ [EL] Lily - Nữ Truyền Cảm (Phim)</option>
+                            <option value="el-Rachel">✨ [EL] Rachel - Nữ Ấm (Review)</option>
+                            <option value="el-custom">🔑 [EL] Voice ID Tùy Chỉnh</option>
+                            <option value="en-US-AndrewNeural">us [US] Andrew - Nam Mỹ Warm</option>
+                            <option value="en-US-AvaNeural">us [US] Ava - Nữ Mỹ Natural</option>
+                        </optgroup>
+                    </select>
+                    <button id="btnPreviewSelectedVoice" class="btn-chip-icon btn-speaker-inline" title="Nghe thử giọng mẫu đang chọn">🔊</button>
+                    <button id="btnDeleteSelectedVoice" class="btn-chip-icon btn-trash-inline" title="Xóa / Ẩn giọng đang chọn khỏi danh sách">🗑️</button>
+                </div>
+                
+                <div id="customVoiceIdWrapper" style="display:none; width: 100%; margin-top: 8px;">
+                    <input type="text" id="inputCustomVoiceId" class="input-text" placeholder="Dán mã ElevenLabs Voice ID của bạn tại đây (ví dụ: JBFqnCBsd6RMkjVDRZzb)..." style="width:100%; border: 1px solid #7c3aed; background: rgba(124, 58, 237, 0.1);">
+                </div>
+
+                <div class="select-wrapper">
+                    <select id="selBgm" title="Chọn nhạc nền BGM">
+                        <option value="none" selected>🔇 Không nhạc nền</option>
+                        <option value="review">🎬 Nhạc Phim Review</option>
+                        <option value="thien">🧘 Nhạc Thiền</option>
+                        <option value="viral">⚡ TikTok Viral</option>
+                    </select>
+                </div>
+
+                <div class="select-wrapper sm">
+                    <select id="selRate" title="Tốc độ đọc">
+                        <option value="+15%" selected>⚡ 115% (Chuẩn TikTok Fast - Khuyên dùng)</option>
+                        <option value="+0%">100% (Tự nhiên gốc)</option>
+                        <option value="+30%">🚀 130% (Nhanh - Năng động)</option>
+                        <option value="+45%">🔥 145% (Cực nhanh)</option>
+                        <option value="-15%">🐢 85% (Chậm - Thong thả)</option>
+                    </select>
+                </div>
+
+                <button id="btnRunTTS" class="btn-orange-sm">
+                    <span>🎙️ TẠO GIỌNG ĐỌC</span>
+                    <span class="spinner" id="ttsSpinner"></span>
+                </button>
+            </div>
+
+            <!-- TTS Progress Bar -->
+            <div id="ttsProgressContainer" class="tts-progress-container" style="display:none;">
+                <div class="tts-progress-header">
+                    <span id="ttsProgressText">⏳ Đang tổng hợp giọng đọc AI & hòa trộn nhạc nền...</span>
+                    <span id="ttsProgressPercent">0%</span>
+                </div>
+                <div class="tts-progress-bar">
+                    <div id="ttsProgressBarFill" class="tts-progress-bar-fill" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <!-- Inline Audio Player -->
+            <div id="audioPlayerWrapper" class="audio-inline-wrapper" style="display:none;">
+                <audio id="ttsAudioPlayer" controls></audio>
+                <button id="btnDownloadAudio" class="btn-sub primary sm">💾 Tải MP3</button>
+            </div>
+        </section>
+
+        <!-- STAGE 4: Voice Clone & Miner (Sleek Compact Vault) -->
+        <section class="section-card slim-card">
+            <div class="section-header-compact">
+                <span class="badge badge-purple">STAGE 4</span>
+                <h2>VOICE CLONE <span>& TikTok Miner Agent</span></h2>
+            </div>
+            
+            <div class="miner-action-row">
+                <!-- Upload Form -->
+                <div class="compact-action-box">
+                    <input type="file" id="refAudioFile" accept="audio/*" style="display:none;">
+                    <button id="btnChooseFile" class="btn-sub sm">📁 Chọn mẫu audio 5s</button>
+                    <input type="text" id="refVoiceName" placeholder="Tên giọng mẫu..." class="input-text-sm">
+                    <button id="btnUploadRefVoice" class="btn-sub primary sm">⬆️ Upload</button>
+                </div>
+
+                <div class="divider-v"></div>
+
+                <!-- Miner Agent -->
+                <div class="compact-action-box">
+                    <select id="selCategory" class="input-select-sm">
+                        <option value="all" selected>🌐 Tất Cả Chủ Đề</option>
+                        <option value="review_phim">🎬 Review Phim</option>
+                        <option value="my_pham">💄 Mỹ Phẩm</option>
+                        <option value="ke_chuyen">📖 Kể Chuyện</option>
+                        <option value="tin_tuc">📰 Tin Drama</option>
+                        <option value="cong_nghe">🎓 Công Nghệ</option>
+                    </select>
+                    <button id="btnStartMining" class="btn-accent-sm">
+                        <span>⛏️ CÀO GIỌNG TIKTOK</span>
+                        <span class="spinner" id="minerSpinner"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Miner Progress Indicator (Active during mining) -->
+            <div id="minerProgress" class="miner-slim-progress" style="display:none;">
+                <div class="miner-status-line">
+                    <span id="minerStatusText">Đang quét TikTok...</span>
+                    <span id="minerPercentText">0%</span>
+                </div>
+                <div class="progress-bar-track">
+                    <div id="minerProgressFill" class="progress-bar-fill"></div>
+                </div>
+            </div>
+
+            <!-- Kho Giọng Mẫu Chip Vault (Collapsible Drawer) -->
+            <div class="vault-container">
+                <div class="vault-title" style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+                    <span>📚 Kho Giọng Mẫu (Tự động dọn sau 24h | Bấm 🔊 Nghe thử / ✏️ Sửa / 🗑️ Xóa)</span>
+                    <button id="btnToggleVault" class="btn-sub sm" style="font-size:12px; padding:4px 10px;">▲ Thu gọn Kho Giọng Mẫu</button>
+                </div>
+                <div id="refVoiceGallery" class="voice-chips-grid">
+                    <p class="empty-gallery">Đang nạp danh sách giọng mẫu...</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- STAGE 5: History & Audio Archive -->
+        <section class="section-card slim-card">
+            <div class="section-header-compact" style="flex-wrap: wrap; gap: 10px;">
+                <span class="badge badge-green">STAGE 5</span>
+                <h2>LỊCH SỬ DỰ ÁN ĐÃ TẠO <span>& Audio Archive</span></h2>
+                <div class="history-global-actions" style="display:flex; align-items:center; gap:8px; margin-left:auto;">
+                    <label class="chk-select-all-wrapper" style="display:flex; align-items:center; gap:4px; font-size:13px; font-weight:600; cursor:pointer; background:rgba(255,255,255,0.06); padding:4px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.1);">
+                        <input type="checkbox" id="chkSelectAllHistory" style="cursor:pointer;"> <span>Chọn Tất Cả</span>
+                    </label>
+                    <button id="btnBulkDownloadHistory" class="btn-sub primary sm">📥 Tải Về Hàng Loạt</button>
+                    <button id="btnBulkDeleteHistory" class="btn-sub danger sm">🗑️ Xóa Đã Chọn</button>
+                    <button id="btnRefreshHistory" class="btn-sub sm">🔄 Tải lại</button>
+                </div>
+            </div>
+            <div id="historyList" class="history-grid">
+                <div class="history-empty">Chưa có lịch sử tạo âm thanh nào.</div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal Settings Drawer -->
+    <div id="settingsModal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>⚙️ Cấu hình Hệ thống</h3>
+                <button id="btnCloseModal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Gemini API Key (Chuẩn hóa bài viết Stage 2):</label>
+                    <div class="key-input-wrapper">
+                        <input type="password" id="apiKeyInput" placeholder="Dán Gemini API Key (AIzaSy... hoặc AQ.Ab8RN...) tại đây">
+                        <button id="btnToggleKeyVis" class="icon-btn-sm" title="Ẩn/Hiện Key">👁️</button>
+                    </div>
+                    <small class="help-text">
+                        Chưa có API Key? <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Bấm vào đây để lấy Key Gemini miễn phí</a>
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label>🎙️ ElevenLabs API Key (Clone Giọng Thật 100%):</label>
+                    <div class="key-input-wrapper">
+                        <input type="password" id="elevenLabsKeyInput" placeholder="Dán ElevenLabs API Key (xi-api-key) để clone giọng thật của bạn">
+                        <button id="btnToggleElKeyVis" class="icon-btn-sm" title="Ẩn/Hiện Key">👁️</button>
+                    </div>
+                    <small class="help-text">
+                        Muốn Clone 100% Giọng Thật của Bạn hoặc ADAM/TikTok mà KHÔNG bị ra giọng Nam Minh? <a href="https://elevenlabs.io" target="_blank" rel="noopener">Lấy ElevenLabs API Key tại đây</a>
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label>Tùy chọn phụ đề:</label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="chkUseSub" checked> Ưu tiên trích xuất phụ đề gốc nếu có (Tăng tốc gấp 5 lần)
+                    </label>
+                </div>
+
+                <div id="saveKeyMsg" class="msg-alert"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="btnSaveKey" class="btn-primary">Lưu Cấu Hình</button>
+                <button id="btnDeleteKey" class="btn-sub danger">Xóa Key</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
