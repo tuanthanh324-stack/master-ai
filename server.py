@@ -13,19 +13,19 @@ from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import socketserver
 
-import io
-if sys.stdout is None:
-    sys.stdout = open(os.devnull, 'w', encoding='utf-8')
-if sys.stderr is None:
-    sys.stderr = open(os.devnull, 'w', encoding='utf-8')
-
-try:
-    if hasattr(sys.stdout, 'buffer') and sys.stdout.buffer:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    if hasattr(sys.stderr, 'buffer') and sys.stderr.buffer:
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-except Exception:
-    pass
+if os.name == 'nt':
+    import io
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, 'w', encoding='utf-8')
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, 'w', encoding='utf-8')
+    try:
+        if hasattr(sys.stdout, 'buffer') and sys.stdout.buffer:
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        if hasattr(sys.stderr, 'buffer') and sys.stderr.buffer:
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:

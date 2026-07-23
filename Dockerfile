@@ -33,4 +33,4 @@ ENV MASTERAI_LOG_LEVEL=INFO
 
 EXPOSE 7860
 
-CMD ["python", "server.py"]
+CMD ["python", "-u", "server.py"]
