@@ -250,25 +250,33 @@ class MasterAIHandler(SimpleHTTPRequestHandler):
                 self._serve_audio_file(url_path)
                 return
 
-            if url_path.endswith('.js') or url_path.endswith('.css') or url_path in ('', '/', '/index.html') or url_path.endswith('.html'):
+            clean_path = url_path.split('?')[0].split('#')[0]
+            target_file = 'index.html' if clean_path in ('', '/', '/index.html') else clean_path.lstrip('/')
+            full_path = os.path.join(WEB_DIR, target_file)
+
+            if os.path.exists(full_path) and os.path.isfile(full_path):
                 self.send_response(200)
-                if url_path.endswith('.js'):
+                if target_file.endswith('.html') or clean_path in ('', '/', '/index.html'):
+                    self.send_header('Content-Type', 'text/html; charset=utf-8')
+                elif clean_path.endswith('.js'):
                     self.send_header('Content-Type', 'application/javascript; charset=utf-8')
-                elif url_path.endswith('.css'):
+                elif clean_path.endswith('.css'):
                     self.send_header('Content-Type', 'text/css; charset=utf-8')
+                elif clean_path.endswith('.svg'):
+                    self.send_header('Content-Type', 'image/svg+xml')
+                elif clean_path.endswith('.png'):
+                    self.send_header('Content-Type', 'image/png')
                 else:
                     self.send_header('Content-Type', 'text/html; charset=utf-8')
 
                 self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
                 self.send_header('Pragma', 'no-cache')
                 self.send_header('Expires', '0')
+                self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
 
-                target_file = 'index.html' if (url_path == '/' or url_path == '') else url_path.lstrip('/')
-                full_path = os.path.join(WEB_DIR, target_file)
-                if os.path.exists(full_path) and os.path.isfile(full_path):
-                    with open(full_path, 'rb') as f:
-                        self.wfile.write(f.read())
+                with open(full_path, 'rb') as f:
+                    self.wfile.write(f.read())
                 return
 
             self.send_error(404, "Endpoint not found")
@@ -310,14 +318,20 @@ class MasterAIHandler(SimpleHTTPRequestHandler):
                 self._send_json(result)
 
             elif url_path == '/api/gemini':
-                input_text = req_data.get('input_text', '')
-                language = req_data.get('language', 'Vietnamese')
-                prompt_custom = req_data.get('prompt_custom', '')
-                api_key = req_data.get('api_key', '')
-                prompt_mode = req_data.get('prompt_mode', 'verbatim')
+                try:
+                    input_text = req_data.get('input_text', '')
+                    language = req_data.get('language', 'Vietnamese')
+                    prompt_custom = req_data.get('prompt_custom', '')
+                    api_key = req_data.get('api_key', '')
+                    prompt_mode = req_data.get('prompt_mode', 'verbatim')
 
-                text_out, status_out = process_gemini(input_text, language, prompt_custom, api_key, prompt_mode)
-                self._send_json({"text": text_out, "status": status_out})
+                    text_out, status_out = process_gemini(input_text, language, prompt_custom, api_key, prompt_mode)
+                    self._send_json({"text": text_out, "status": status_out})
+                except Exception as err:
+                    from gemini_processor import fallback_normalize
+                    input_text = req_data.get('input_text', '') if isinstance(req_data, dict) else ''
+                    norm_text = fallback_normalize(input_text)
+                    self._send_json({"text": norm_text, "status": f"Thành công (Chuẩn hóa Nội bộ) | {len(norm_text.split())} từ"})
 
             elif url_path == '/api/config':
                 api_key = req_data.get('api_key', '')

@@ -93,13 +93,13 @@ class ConfigManager:
     def get_gemini_key(self) -> str:
         """
         Lấy Gemini API Key - Ưu tiên environment variable.
-        Đây là cách bảo mật nhất!
         """
-        # 1. Check environment variable FIRST (highest priority)
-        env_key = os.environ.get(ENV_GEMINI_KEY, "").strip()
-        if env_key:
-            logger.debug("Using Gemini key from environment variable")
-            return env_key
+        # 1. Check environment variables FIRST (highest priority)
+        for env_var in [ENV_GEMINI_KEY, "GEMINI_API_KEY", "GEMINI_KEY"]:
+            env_key = os.environ.get(env_var, "").strip()
+            if env_key:
+                logger.debug(f"Using Gemini key from environment variable {env_var}")
+                return env_key
 
         # 2. Fallback to file config
         config = self.load_config()

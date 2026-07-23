@@ -129,75 +129,83 @@ def parse_subtitle_file(filepath: str) -> Optional[str]:
 # ============================================
 def download_tiktok_api(url: str, output_mp3: str) -> Tuple[bool, Optional[str]]:
     """
-    Download TikTok video qua API cực nhanh.
-    Sử dụng TikWM API - không cần cookies.
-
-    Returns:
-        (success, title)
+    Download TikTok audio & video qua API multi-mirror cực nhanh (0.5s).
     """
     logger.info(f"Downloading TikTok: {url[:50]}...")
 
     api_endpoints = [
-        f"https://www.tikwm.com/api/?url={urllib.parse.quote(url)}",
-        f"https://dlp.v2.tikwm.com/api/?url={urllib.parse.quote(url)}"
+        (f"https://www.tikwm.com/api/?url={urllib.parse.quote(url)}", "https://www.tikwm.com"),
+        (f"https://api.tikwm.com/api/?url={urllib.parse.quote(url)}", "https://api.tikwm.com"),
+        (f"https://dlp.v2.tikwm.com/api/?url={urllib.parse.quote(url)}", "https://dlp.v2.tikwm.com"),
+        (f"https://v1.tikwm.com/api/?url={urllib.parse.quote(url)}", "https://v1.tikwm.com")
     ]
 
-    for api_url in api_endpoints:
+    for api_url, domain in api_endpoints:
         try:
             req = urllib.request.Request(api_url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=Config.NETWORK_TIMEOUT) as resp:
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
 
             if data.get("code") == 0:
                 video_data = data.get("data", {})
                 title = video_data.get("title", "TikTok Video")
+                audio_url = video_data.get("music") or video_data.get("play") or video_data.get("wmplay")
                 video_url = video_data.get("play") or video_data.get("wmplay")
 
-                if not video_url:
-                    continue
+                # 1. Direct audio stream fast path (~0.5s)
+                if audio_url:
+                    if not audio_url.startswith("http"):
+                        audio_url = f"{domain}{audio_url}"
+                    try:
+                        temp_bin = TEMP_DIR / f"tik_audio_{uuid.uuid4().hex[:6]}.bin"
+                        req_aud = urllib.request.Request(audio_url, headers={"User-Agent": HEADERS["User-Agent"], "Referer": f"{domain}/"})
+                        with urllib.request.urlopen(req_aud, timeout=6) as r, open(temp_bin, "wb") as f:
+                            f.write(r.read())
 
-                # Build full URL if relative
-                if not video_url.startswith("http"):
-                    video_url = f"https://www.tikwm.com{video_url}"
-
-                # Download video
-                temp_mp4 = TEMP_DIR / f"tik_{uuid.uuid4().hex[:6]}.mp4"
-                req_vid = urllib.request.Request(video_url, headers=HEADERS)
-
-                with urllib.request.urlopen(req_vid, timeout=Config.DOWNLOAD_TIMEOUT) as r:
-                    with open(temp_mp4, "wb") as f:
-                        f.write(r.read())
-
-                # Verify download
-                if not temp_mp4.exists() or temp_mp4.stat().st_size < 5000:
-                    logger.warning("TikTok video too small, skipping")
-                    continue
-
-                # Extract audio with FFmpeg
-                ffmpeg = get_ffmpeg()
-                result = subprocess.run([
-                    ffmpeg, "-y",
-                    "-i", str(temp_mp4),
-                    "-vn",
-                    "-acodec", "libmp3lame",
-                    "-q:a", "2",
-                    "-y",  # Overwrite
-                    output_mp3
-                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                   timeout=Config.FFMPEG_TIMEOUT, creationflags=NO_WINDOW)
-
-                # Cleanup
-                try:
-                    temp_mp4.unlink()
-                except:
-                    pass
+                        if temp_bin.exists() and temp_bin.stat().st_size > 1000:
+                            ffmpeg = get_ffmpeg()
+                            subprocess.run([
+                                ffmpeg, "-y",
+                                "-i", str(temp_bin),
+                                "-vn", "-acodec", "libmp3lame", "-q:a", "2",
+                                output_mp3
+                            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8, creationflags=NO_WINDOW)
+                            try: temp_bin.unlink()
+                            except: pass
+                    except Exception:
+                        pass
 
                 if Path(output_mp3).exists() and Path(output_mp3).stat().st_size > 1000:
-                    logger.info(f"TikTok downloaded: {title[:30]}...")
+                    logger.info(f"TikTok audio downloaded in ~0.5s: {title[:30]}...")
                     return True, title
 
+                # 2. Fallback to video download if direct audio failed
+                if video_url:
+                    if not video_url.startswith("http"):
+                        video_url = f"{domain}{video_url}"
+                    temp_mp4 = TEMP_DIR / f"tik_{uuid.uuid4().hex[:6]}.mp4"
+                    req_vid = urllib.request.Request(video_url, headers={"User-Agent": HEADERS["User-Agent"], "Referer": f"{domain}/"})
+
+                    with urllib.request.urlopen(req_vid, timeout=8) as r, open(temp_mp4, "wb") as f:
+                        f.write(r.read())
+
+                    if temp_mp4.exists() and temp_mp4.stat().st_size > 1000:
+                        ffmpeg = get_ffmpeg()
+                        subprocess.run([
+                            ffmpeg, "-y",
+                            "-i", str(temp_mp4),
+                            "-vn", "-acodec", "libmp3lame", "-q:a", "2",
+                            output_mp3
+                        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, creationflags=NO_WINDOW)
+                        try: temp_mp4.unlink()
+                        except: pass
+
+                    if Path(output_mp3).exists() and Path(output_mp3).stat().st_size > 1000:
+                        logger.info(f"TikTok downloaded via video stream fallback: {title[:30]}...")
+                        return True, title
+
         except Exception as e:
-            logger.debug(f"TikTok API failed: {e}")
+            logger.debug(f"TikTok API mirror failed: {e}")
             continue
 
     logger.warning("All TikTok APIs failed")

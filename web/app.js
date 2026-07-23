@@ -288,19 +288,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 600);
 
         try {
-            const res = await fetch('/api/process', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    url: url,
-                    language: selLang.value,
-                    model_type: selModel.value,
-                    use_sub: chkUseSub.checked,
-                    auto_gemini: false,
-                    prompt_custom: customPrompt.value.trim(),
-                    prompt_mode: selMode.value
-                })
-            });
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 75000);
+
+            let res;
+            try {
+                res = await fetch('/api/process', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: controller.signal,
+                    body: JSON.stringify({
+                        url: url,
+                        language: selLang.value,
+                        model_type: selModel.value,
+                        use_sub: chkUseSub.checked,
+                        auto_gemini: false,
+                        prompt_custom: customPrompt.value.trim(),
+                        prompt_mode: selMode.value
+                    })
+                });
+            } finally {
+                clearTimeout(timeoutId);
+            }
 
             if (!res.ok) throw new Error(`Server phản hồi lỗi HTTP ${res.status}`);
             const data = await res.json();
@@ -327,17 +336,26 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             updateProgress(85, `🤖 STAGE 2: Gemini AI đang chuẩn hóa bài viết...`, 'info');
-            const gemRes = await fetch('/api/gemini', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    input_text: data.raw_text,
-                    language: selLang.value,
-                    prompt_custom: customPrompt.value.trim(),
-                    api_key: apiKeyInput.value.trim(),
-                    prompt_mode: selMode.value
-                })
-            });
+            const gemController = new AbortController();
+            const gemTimeoutId = setTimeout(() => gemController.abort(), 45000);
+
+            let gemRes;
+            try {
+                gemRes = await fetch('/api/gemini', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: gemController.signal,
+                    body: JSON.stringify({
+                        input_text: data.raw_text,
+                        language: selLang.value,
+                        prompt_custom: customPrompt.value.trim(),
+                        api_key: apiKeyInput.value.trim(),
+                        prompt_mode: selMode.value
+                    })
+                });
+            } finally {
+                clearTimeout(gemTimeoutId);
+            }
 
             const gemData = await gemRes.json();
             stopLiveTimer(true);
@@ -347,12 +365,21 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 txtGemini.value = gemData.text || '';
                 updateWordCount(txtGemini, geminiWordCount);
-                updateProgress(100, `🎉 Hoàn thành cả 2 Stage! (${gemData.status})`, 'success');
+                const stageStatus = gemData.status || data.method || 'Thành công';
+                if (stageStatus.includes("CHƯA NẠP") || stageStatus.includes("Offline") || stageStatus.includes("Nội bộ")) {
+                    updateProgress(100, `⚠️ CHƯA NẠP GEMINI API KEY (Đang chạy Offline không có AI). Vui lòng bấm nút ⚙️ Cài đặt và dán Key để AI tóm tắt / viết lại bài!`, 'error');
+                } else {
+                    updateProgress(100, `🎉 Gemini AI đã chuẩn hóa xong bài viết! (${stageStatus})`, 'success');
+                }
             }
         } catch (err) {
             resetTimers();
             stopLiveTimer(false);
-            updateProgress(0, `❌ Lỗi kết nối Server: ${err.message}`, 'error');
+            const isAbort = err.name === 'AbortError';
+            const errMsg = isAbort 
+                ? 'Quá thời gian chờ server (Timeout 75s). Vui lòng thử lại hoặc dán Gemini API Key trong Cài đặt!' 
+                : err.message;
+            updateProgress(0, `❌ Lỗi: ${errMsg}`, 'error');
         } finally {
             btnProcess.disabled = false;
             processSpinner.style.display = 'none';
@@ -394,11 +421,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 txtGemini.value = data.text;
                 updateWordCount(txtGemini, geminiWordCount);
                 updateProgress(100, `🎉 Gemini AI đã chuẩn hóa xong bài viết! (${data.status})`, 'success');
-                const stage3 = document.getElementById('stage3Card');
-                if (stage3) {
-                    stage3.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    stage3.classList.add('highlight-flash');
-                    setTimeout(() => stage3.classList.remove('highlight-flash'), 1500);
+                const stage2 = document.getElementById('txtGemini') || document.getElementById('stage2Card');
+                if (stage2) {
+                    stage2.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    stage2.classList.add('highlight-flash');
+                    setTimeout(() => stage2.classList.remove('highlight-flash'), 1500);
                 }
             }
         } catch (err) {

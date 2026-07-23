@@ -4,4 +4,6 @@ __pycache__/
 *.pyc
 *.log
 agency-agents/
+ffmpeg/
 .env
+config.json

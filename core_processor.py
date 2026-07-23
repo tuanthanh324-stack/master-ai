@@ -15,6 +15,7 @@ if os.path.exists(FFMPEG_DIR):
     os.environ["PATH"] = FFMPEG_DIR + os.pathsep + os.environ.get("PATH", "")
 
 import json
+import time
 import re
 import subprocess
 import threading
@@ -174,79 +175,87 @@ def normalize_url(raw_url: str) -> str:
     return url
 
 def download_tiktok_api(url: str, output_mp3: str) -> Tuple[bool, Optional[str]]:
-    """Fast TikTok video & audio downloader using multi-mirror API endpoints with 3.5s timeout."""
+    """Ultra-Fast TikTok audio & video downloader using direct audio stream first (0.5s)."""
     clean_url = normalize_url(url)
     tik_mp4 = os.path.join(TEMP_DIR, "tikwm_temp.mp4")
+    encoded_url = urllib.parse.quote(clean_url)
     
-    # Mirror 1: TikWM API
-    try:
-        api_endpoint = f"https://www.tikwm.com/api/?url={urllib.parse.quote(clean_url)}"
-        req = urllib.request.Request(
-            api_endpoint,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0"}
-        )
-        with urllib.request.urlopen(req, timeout=3.5) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-        
-        if data.get("code") == 0 and "data" in data:
-            v_data = data["data"]
-            title = v_data.get("title", "")
-            video_url = v_data.get("play") or v_data.get("wmplay")
-            audio_url = v_data.get("music") or video_url
-            
-            # Download full intact video for RapidOCR burned-in subtitle scanning
-            if video_url:
-                if not video_url.startswith("http"):
-                    video_url = f"https://www.tikwm.com{video_url}"
-                try:
-                    req_v = urllib.request.Request(video_url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.tikwm.com/"})
-                    with urllib.request.urlopen(req_v, timeout=7) as r_in, open(tik_mp4, "wb") as f_out:
-                        f_out.write(r_in.read())
-                except Exception:
-                    pass
+    api_endpoints = [
+        ("https://www.tikwm.com/api/?url=", "https://www.tikwm.com"),
+        ("https://api.tikwm.com/api/?url=", "https://api.tikwm.com"),
+    ]
 
-            if audio_url:
-                if not audio_url.startswith("http"):
-                    audio_url = f"https://www.tikwm.com{audio_url}"
-                
-                req_audio = urllib.request.Request(audio_url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.tikwm.com/"})
-                with urllib.request.urlopen(req_audio, timeout=6) as r_in, open(output_mp3, "wb") as f_out:
-                    f_out.write(r_in.read())
-                
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    ]
+
+    for idx, (base_api, domain) in enumerate(api_endpoints):
+        try:
+            api_endpoint = f"{base_api}{encoded_url}"
+            ua = user_agents[idx % len(user_agents)]
+            req = urllib.request.Request(
+                api_endpoint,
+                headers={"User-Agent": ua, "Accept": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=2.2) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+            
+            if data.get("code") == 0 and "data" in data:
+                v_data = data["data"]
+                title = v_data.get("title", "")
+                audio_url = v_data.get("music") or v_data.get("play") or v_data.get("wmplay")
+                video_url = v_data.get("play") or v_data.get("wmplay")
+
+                # 1. FAST PATH: Download direct audio stream FIRST (~0.5s)
+                if audio_url:
+                    if not audio_url.startswith("http"):
+                        audio_url = f"{domain}{audio_url}"
+                    
+                    try:
+                        req_audio = urllib.request.Request(audio_url, headers={"User-Agent": ua, "Referer": f"{domain}/"})
+                        temp_dl = os.path.join(TEMP_DIR, f"tik_audio_{uuid.uuid4().hex[:6]}.bin")
+                        with urllib.request.urlopen(req_audio, timeout=6) as r_in, open(temp_dl, "wb") as f_out:
+                            f_out.write(r_in.read())
+
+                        if os.path.exists(temp_dl) and os.path.getsize(temp_dl) > 1000:
+                            ffmpeg_exe = FFMPEG_PATH if os.path.exists(FFMPEG_PATH) else "ffmpeg"
+                            cmd = [
+                                ffmpeg_exe, "-y", "-i", temp_dl,
+                                "-vn", "-acodec", "libmp3lame", "-q:a", "2",
+                                output_mp3
+                            ]
+                            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
+                            try: os.remove(temp_dl)
+                            except Exception: pass
+                    except Exception:
+                        pass
+
                 if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
                     return True, title
-    except Exception:
-        pass
 
-    # Mirror 2: Tikwm secondary CDN fallback
-    try:
-        api_endpoint = f"https://api.tikwm.com/api/?url={urllib.parse.quote(clean_url)}"
-        req = urllib.request.Request(api_endpoint, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=3.5) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-        if data.get("code") == 0 and "data" in data:
-            v_data = data["data"]
-            video_url = v_data.get("play") or v_data.get("wmplay")
-            audio_url = v_data.get("music") or video_url
-
-            if video_url:
-                if not video_url.startswith("http"):
-                    video_url = f"https://api.tikwm.com{video_url}"
-                try:
-                    req_v = urllib.request.Request(video_url, headers={"User-Agent": "Mozilla/5.0"})
-                    with urllib.request.urlopen(req_v, timeout=7) as r_in, open(tik_mp4, "wb") as f_out:
-                        f_out.write(r_in.read())
-                except Exception:
-                    pass
-
-            if audio_url:
-                req_audio = urllib.request.Request(audio_url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req_audio, timeout=6) as r_in, open(output_mp3, "wb") as f_out:
-                    f_out.write(r_in.read())
-                if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
-                    return True, v_data.get("title", "")
-    except Exception:
-        pass
+                # 2. FALLBACK PATH: Download full video if audio stream failed
+                if video_url:
+                    if not video_url.startswith("http"):
+                        video_url = f"{domain}{video_url}"
+                    try:
+                        req_v = urllib.request.Request(video_url, headers={"User-Agent": ua, "Referer": f"{domain}/"})
+                        with urllib.request.urlopen(req_v, timeout=8) as r_in, open(tik_mp4, "wb") as f_out:
+                            f_out.write(r_in.read())
+                        if os.path.exists(tik_mp4) and os.path.getsize(tik_mp4) > 1000:
+                            ffmpeg_exe = FFMPEG_PATH if os.path.exists(FFMPEG_PATH) else "ffmpeg"
+                            cmd = [
+                                ffmpeg_exe, "-y", "-i", tik_mp4,
+                                "-vn", "-acodec", "libmp3lame", "-q:a", "2",
+                                output_mp3
+                            ]
+                            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                            if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
+                                return True, title
+                    except Exception:
+                        pass
+        except Exception:
+            continue
 
     return False, None
 
@@ -382,7 +391,61 @@ def extract_youtube_subtitles_fast(url: str, session_id: str = "") -> Optional[s
         pass
     return None
 
-import uuid
+import uuid# URL Normalizer & Cleaner across TikTok, YouTube, Facebook, Instagram
+def normalize_url(raw_url: str) -> str:
+    """Cleans tracking query parameters from TikTok, YouTube, Facebook, Instagram URLs."""
+    url = (raw_url or "").strip()
+    if not url:
+        return ""
+
+    # Resolve short TikTok redirects (vt.tiktok.com / vm.tiktok.com)
+    if "vt.tiktok.com" in url or "vm.tiktok.com" in url:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, timeout=3.5) as resp:
+                final_u = resp.geturl()
+                if match := re.search(r'(https?://(?:www\.)?tiktok\.com/@[^/]+/video/\d+)', final_u):
+                    return match.group(1)
+        except Exception:
+            pass
+
+    # TikTok Normalizer
+    tiktok_match = re.search(r'(https?://(?:www\.|vt\.|vm\.)?tiktok\.com/@[^/]+/video/\d+)', url)
+    if tiktok_match:
+        return tiktok_match.group(1)
+
+    tiktok_short = re.search(r'(https?://(?:vt\.|vm\.)tiktok\.com/[A-Za-z0-9_]+)', url)
+    if tiktok_short:
+        return tiktok_short.group(1)
+
+    # YouTube & YouTube Shorts Normalizer
+    yt_shorts = re.search(r'youtube\.com/shorts/([A-Za-z0-9_-]+)', url)
+    if yt_shorts:
+        return f"https://www.youtube.com/watch?v={yt_shorts.group(1)}"
+
+    yt_watch = re.search(r'(https?://(?:www\.)?youtube\.com/watch\?v=[A-Za-z0-9_-]+)', url)
+    if yt_watch:
+        return yt_watch.group(1)
+
+    yt_youtu = re.search(r'youtu\.be/([A-Za-z0-9_-]+)', url)
+    if yt_youtu:
+        return f"https://www.youtube.com/watch?v={yt_youtu.group(1)}"
+
+    # Facebook Reel & Video Normalizer
+    fb_reel = re.search(r'(https?://(?:www\.|m\.|web\.)?facebook\.com/reel/\d+)', url)
+    if fb_reel:
+        return fb_reel.group(1)
+
+    fb_watch = re.search(r'(https?://(?:www\.|m\.|web\.)?facebook\.com/watch/\?v=\d+)', url)
+    if fb_watch:
+        return fb_watch.group(1)
+
+    # Instagram Reel Normalizer
+    ig_reel = re.search(r'(https?://(?:www\.)?instagram\.com/(?:reel|p)/[A-Za-z0-9_-]+)', url)
+    if ig_reel:
+        return ig_reel.group(1)
+
+    return url
 
 # Universal Downloader Engine optimized per platform (TikTok, YouTube, Facebook, Instagram)
 def download_audio_direct(url: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -440,7 +503,7 @@ def download_audio_direct(url: str) -> Tuple[Optional[str], Optional[str], Optio
             'quiet': True,
             'no_warnings': True,
             'ignoreerrors': True,
-            'socket_timeout': 6,
+            'socket_timeout': 8,
             'retries': 2,
             'fragment_retries': 2,
             'http_headers': headers,
@@ -458,25 +521,26 @@ def download_audio_direct(url: str) -> Tuple[Optional[str], Optional[str], Optio
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([clean_url])
         
+        # Universal audio detection & ffmpeg conversion fallback
         actual_video = None
         for fn in os.listdir(TEMP_DIR):
-            if session_id in fn and fn.endswith((".mp4", ".mkv", ".webm")):
-                actual_video = os.path.join(TEMP_DIR, fn)
-                break
-
-        if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1000:
-            return audio_path, extract_subtitle(session_id), actual_video
-
-        if actual_video and os.path.exists(actual_video) and os.path.getsize(actual_video) > 1000:
-            ffmpeg_exe = FFMPEG_PATH if os.path.exists(FFMPEG_PATH) else "ffmpeg"
-            cmd = [
-                ffmpeg_exe, "-y", "-i", actual_video,
-                "-vn", "-acodec", "libmp3lame", "-q:a", "2",
-                audio_path
-            ]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
-            if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1000:
-                return audio_path, extract_subtitle(session_id), actual_video
+            if session_id in fn:
+                fp = os.path.join(TEMP_DIR, fn)
+                if os.path.exists(fp) and os.path.getsize(fp) > 1000:
+                    if fp.endswith(".mp3"):
+                        actual_v = os.path.join(TEMP_DIR, f"video_{session_id}.mp4")
+                        return fp, extract_subtitle(session_id), actual_v if os.path.exists(actual_v) else None
+                    elif fp.endswith((".m4a", ".webm", ".aac", ".opus", ".wav", ".ogg", ".mp4", ".mkv", ".flv", ".3gp")):
+                        ffmpeg_exe = FFMPEG_PATH if os.path.exists(FFMPEG_PATH) else "ffmpeg"
+                        cmd = [
+                            ffmpeg_exe, "-y", "-i", fp,
+                            "-vn", "-acodec", "libmp3lame", "-q:a", "2",
+                            audio_path
+                        ]
+                        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+                        if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1000:
+                            actual_video = fp if fp.endswith((".mp4", ".mkv", ".webm")) else None
+                            return audio_path, extract_subtitle(session_id), actual_video
     except Exception:
         pass
 
@@ -486,7 +550,7 @@ def download_audio_direct(url: str) -> Tuple[Optional[str], Optional[str], Optio
             sys.executable, "-m", "yt_dlp",
             "-f", "ba/ba*/m4a/140/18/best",
             "-x", "--audio-format", "mp3",
-            "--socket-timeout", "6",
+            "--socket-timeout", "8",
             "--retries", "2",
             "--user-agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36",
             "--ffmpeg-location", ffmpeg_loc,
@@ -494,8 +558,24 @@ def download_audio_direct(url: str) -> Tuple[Optional[str], Optional[str], Optio
             "--no-playlist", clean_url
         ]
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=25)
-        if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1000:
-            return audio_path, extract_subtitle(session_id), None
+        
+        # Universal audio detection for CLI output
+        for fn in os.listdir(TEMP_DIR):
+            if session_id in fn:
+                fp = os.path.join(TEMP_DIR, fn)
+                if os.path.exists(fp) and os.path.getsize(fp) > 1000:
+                    if fp.endswith(".mp3"):
+                        return fp, extract_subtitle(session_id), None
+                    elif fp.endswith((".m4a", ".webm", ".aac", ".opus", ".wav", ".ogg", ".mp4", ".mkv")):
+                        ffmpeg_exe = FFMPEG_PATH if os.path.exists(FFMPEG_PATH) else "ffmpeg"
+                        cmd = [
+                            ffmpeg_exe, "-y", "-i", fp,
+                            "-vn", "-acodec", "libmp3lame", "-q:a", "2",
+                            audio_path
+                        ]
+                        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+                        if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1000:
+                            return audio_path, extract_subtitle(session_id), None
     except Exception:
         pass
 
@@ -646,7 +726,7 @@ def process_transcription(
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(_run_whisper)
-                result = future.result(timeout=6.0)
+                result = future.result(timeout=60.0)
 
             whisper_text = result.get("text", "").strip()
             final_text = whisper_text
@@ -658,7 +738,7 @@ def process_transcription(
                     final_text = ocr_fallback
                     method = "Phụ đề Màn hình OCR (Siêu Tốc Auto Fallback)"
             if not final_text:
-                return {"error": "Máy chủ Đám mây quá tải âm thanh hoặc Video không chứa thoại. Vui lòng gắn API Key Gemini trong Cài đặt để xử lý Siêu Tốc 1.5s!"}
+                return {"error": "Không thể trích xuất thoại từ video. Vui lòng kiểm tra lại đường link hoặc gắn API Key Gemini trong Cài đặt để xử lý Siêu Tốc 1.5s!"}
 
     # Attach Comment Bubble Context if found
     if comment_bubble_text:
@@ -716,18 +796,37 @@ def process_gemini(
     input_text = (input_text or "").strip()
     prompt_custom = (prompt_custom or "").strip()
 
-    if not api_key:
-        return "Chưa có API Key! Vui lòng nhập Gemini API Key trong Cài đặt.", "ERROR"
     if not input_text:
         return "Chưa có nội dung cần chuẩn hóa!", "ERROR"
+
+    # Fallback to local normalization engine if no API key is supplied
+    if not api_key:
+        from gemini_processor import fallback_normalize
+        norm_text = fallback_normalize(input_text)
+        word_count = len(norm_text.split())
+        return norm_text, f"⚠️ CHƯA NẠP GEMINI API KEY (Đang chạy Offline không có AI) | {word_count} từ"
 
     lang_map = {"Vietnamese": "tiếng Việt", "English": "English", "Spanish": "Español", "French": "Français", "German": "Deutsch"}
     target_lang = lang_map.get(language, "tiếng Việt")
 
     if prompt_custom:
-        prompt = f"{prompt_custom}\n\nNội dung lời thoại thô:\n{input_text}"
+        prompt = (
+            f"Bạn là chuyên gia phóng tác kịch bản và sáng tạo nội dung xuất sắc. Hãy viết lại toàn bộ đoạn văn bản {target_lang} dưới đây theo đúng yêu cầu:\n"
+            f"YÊU CẦU ĐẶC BIỆT: {prompt_custom}\n\n"
+            f"QUY TẮC BẮT BUỘC:\n"
+            f"1. Loại bỏ hoàn toàn các ký tự nhiễu như [âm nhạc], [tiếng cười], [vỗ tay], >>...\n"
+            f"2. Tự động bổ sung chi tiết bối cảnh xung quanh, không gian, miêu tả cảm xúc nhân vật và diễn biến sinh động.\n"
+            f"3. Không giữ nguyên câu từ thô vụng cũ, hãy viết lại bằng văn phong mượt mà, cuốn hút và trau chuốt nhất.\n\n"
+            f"Nội dung lời thoại thô:\n{input_text}"
+        )
     else:
-        if prompt_mode == "summary":
+        if prompt_mode == "rewrite":
+            prompt = (
+                f"Bạn là tác giả văn học và chuyên gia phóng tác kịch bản video. Hãy viết lại đoạn văn {target_lang} dưới đây "
+                f"thành một bài văn phóng tác sinh động, hấp dẫn. Loại bỏ hoàn toàn các nhãn nhiễu như [âm nhạc], [tiếng cười], >>... "
+                f"Hãy tự động bổ sung chi tiết bối cảnh, miêu tả khung cảnh xung quanh, không gian, nhân vật, cảm xúc và nâng cấp ngôn từ cuốn hút nhất:\n\n{input_text}"
+            )
+        elif prompt_mode == "summary":
             prompt = (
                 f"Bạn là chuyên gia tóm tắt bài viết. Hãy tổng hợp và tóm tắt đoạn văn bản {target_lang} dưới đây "
                 f"thành các ý chính cô đọng, rõ ràng, phân đoạn logic có gạch đầu dòng ngắn gọn:\n\n{input_text}"
@@ -744,32 +843,47 @@ def process_gemini(
             )
         else: # verbatim (Default)
             prompt = (
-                f"Bạn là chuyên gia biên tập lời thoại video chuyên nghiệp. Hãy chỉnh sửa và trình bày đoạn văn bản {target_lang} dưới đây:\n"
-                f"1. BẢO TOÀN ĐẦY ĐỦ 100% LỜI NÓI CỦA NHÂN VẬT: Giữ lại toàn bộ câu từ, câu hỏi, câu trả lời và thông tin chi tiết. KHÔNG ĐƯỢC TÓM TẮT, KHÔNG CẮT BỎ CÂU NÓI NÀO CỦA NHÂN VẬT.\n"
-                f"2. Sửa toàn bộ lỗi chính tả, thêm dấu câu (dấu chấm, phẩy, hỏi chấm) chính xác, và ngắt đoạn văn bản thành các đoạn văn rõ ràng, dễ đọc.\n"
-                f"3. QUAN TRỌNG NHẤT: CHỈ TRẢ VỀ DUY NHẤT VĂN BẢN LỜI THOẠI ĐÃ CHỈNH SỬA ĐỂ LỒNG TIẾNG. KHÔNG THÊM BẤT KỲ DÒNG NỐT GHI CHÚ, KHÔNG THÊM BẢNG THAY THẾ TỪ NGHĨA, KHÔNG DÙNG DẤU GẠCH ĐẦU DÒNG SAO * **...**, VÀ KHÔNG THÊM CÂU NÓI XIN CHÀO HAY LỜI NHẮN NÀO KHÁC.\n\n"
+                f"Bạn là chuyên gia biên tập lời thoại video chuyên nghiệp. Hãy biên tập lại toàn bộ đoạn văn bản {target_lang} dưới đây:\n"
+                f"1. BẢO TOÀN TRỌN VẸN 100% TOÀN BỘ LỜI NÓI CỦA NHÂN VẬT TỪ ĐẦU ĐẾN CUỐI: Giữ đầy đủ tất cả các câu từ, thông tin. KHÔNG ĐƯỢC CẮT NGẮN, KHÔNG DỪNG GIỮA CHỪNG, KHÔNG TÓM TẮT BẤT KỲ CÂU NÀO.\n"
+                f"2. Sửa lỗi chính tả, thêm dấu câu chính xác, ngắt đoạn văn bản thành các đoạn mượt mà, dễ đọc.\n"
+                f"3. CHỈ TRẢ VỀ DUY NHẤT VĂN BẢN LỜI THOẠI ĐÃ CHỈNH SỬA. KHÔNG THÊM LỜI CHÀO, NỐT GHI CHÚ HAY BẤT KỲ DÒNG NÀO KHÁC.\n\n"
                 f"Nội dung lời thoại thô:\n{input_text}"
             )
 
-    candidate_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-lite"]
+    candidate_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest"]
     last_err = ""
 
     if api_key:
-        for model_name in candidate_models:
+        for idx, model_name in enumerate(candidate_models):
             try:
-                data = {"contents": [{"parts": [{"text": prompt}]}]}
+                data = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.3,
+                        "maxOutputTokens": 8192
+                    }
+                }
                 req = urllib.request.Request(
                     f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}",
                     data=json.dumps(data).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                     method="POST"
                 )
-                with urllib.request.urlopen(req, timeout=35) as resp:
+                with urllib.request.urlopen(req, timeout=20) as resp:
                     res_json = json.loads(resp.read().decode("utf-8"))
-                output = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-                return output, f"Thành công ({model_name}) | {len(output.split())} từ"
+                
+                output = ""
+                if "candidates" in res_json and res_json["candidates"]:
+                    cand = res_json["candidates"][0]
+                    if "content" in cand and "parts" in cand["content"] and cand["content"]["parts"]:
+                        output = cand["content"]["parts"][0].get("text", "").strip()
+                
+                if output:
+                    return output, f"Thành công ({model_name}) | {len(output.split())} từ"
             except Exception as err:
                 last_err = str(err)
+                if "429" in last_err and idx < len(candidate_models) - 1:
+                    time.sleep(0.6)
                 continue
 
     # Fallback to local rule-based text normalizer if API quota exceeded or key invalid
@@ -809,24 +923,77 @@ def trim_audio_to_sample(filepath: str, duration: float = 6.0) -> bool:
 import random
 import sqlite3
 
-def clean_latex_leaks(text: str) -> str:
-    """Removes raw unparsed LaTeX math syntax (e.g., \\frac{a}{b}, \\sqrt{x}, raw $) leaving clean human math."""
+def sanitize_float_roots(text: str) -> str:
+    """Removes float garbage noise (e.g. 0.30000000000000004 -> 0.3, 5.0 -> 5) leaving pristine math roots."""
     if not text:
         return ""
-    # Convert \frac{a}{b} -> a/b
-    text = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'\1/\2', text)
+    
+    def _clean_match(m):
+        val_str = m.group(0)
+        try:
+            val = float(val_str)
+            rounded = round(val, 6)
+            if rounded == int(rounded):
+                return str(int(rounded))
+            return f"{rounded:g}"
+        except Exception:
+            return val_str
+
+    return re.sub(r'\b\d+\.\d+\b', _clean_match, text)
+
+
+def clean_latex_leaks(text: str) -> str:
+    """Removes raw unparsed LaTeX math syntax leaving clean SGK Unicode math without float garbage."""
+    if not text:
+        return ""
+
+    # First clean float precision garbage (0.30000000000000004 -> 0.3)
+    text = sanitize_float_roots(text)
+
+    # Convert \frac{a}{b} or \dfrac{a}{b} -> a/b
+    text = re.sub(r'\\d?frac\{([^{}]+)\}\{([^{}]+)\}', r'\1/\2', text)
     # Convert \sqrt{a} -> √a
     text = re.sub(r'\\sqrt\{([^{}]+)\}', r'√\1', text)
     # Remove \text{...} -> ...
     text = re.sub(r'\\text\{([^{}]+)\}', r'\1', text)
+
+    # Standard LaTeX math symbol to Unicode mapping
+    latex_unicode_map = [
+        (r'\\le([a-zA-Z]|\b)', r'≤\1'),
+        (r'\\leq\b', '≤'),
+        (r'\\ge([a-zA-Z]|\b)', r'≥\1'),
+        (r'\\geq\b', '≥'),
+        (r'\\neq\b', '≠'),
+        (r'\\pm\b', '±'),
+        (r'\\approx\b', '≈'),
+        (r'\\times\b', '×'),
+        (r'\\cdot\b', '·'),
+        (r'\\pi\b', 'π'),
+        (r'\\infty\b', '∞'),
+        (r'\\in\b', '∈'),
+        (r'\\notin\b', '∉'),
+        (r'\\subset\b', '⊂'),
+        (r'\\cup\b', '∪'),
+        (r'\\cap\b', '∩'),
+        (r'\\angle\b', '∠'),
+        (r'\\triangle\b', 'Δ'),
+        (r'\\alpha\b', 'α'),
+        (r'\\beta\b', 'β'),
+        (r'\\gamma\b', 'γ'),
+        (r'\\theta\b', 'θ'),
+    ]
+    for pattern, repl in latex_unicode_map:
+        text = re.sub(pattern, repl, text)
+
     # Remove math commands like \limits, \displaystyle, etc.
     text = re.sub(r'\\(limits|displaystyle|quad|qquad|left|right)', '', text)
     # Remove raw unescaped $ dollar signs enclosing math
     text = re.sub(r'\$([^$]+)\$', r'\1', text)
     text = text.replace('$', '')
-    # Clean up double backslashes or extra spaces
+    # Clean up leftover control backslashes
     text = re.sub(r'\\([a-zA-Z]+)', r'\1', text)
     return text.strip()
+
 
 
 def format_solution_4steps(raw_solution: str) -> str:

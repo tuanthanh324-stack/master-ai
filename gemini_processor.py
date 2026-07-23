@@ -10,12 +10,11 @@ from config import Config
 from config_manager import get_gemini_key
 from logger import logger
 
-# Gemini models - ưu tiên nhanh nhất
+# Gemini models - ưu tiên hạn ngạch cao & tốc độ nhanh nhất
 GEMINI_MODELS = [
+    "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash-latest"
 ]
 
 # Prompt templates
@@ -79,9 +78,15 @@ def clean_output(text: str) -> str:
 
 
 def fallback_normalize(text: str) -> str:
-    """Fallback: Chuẩn hóa text cơ bản nếu không có API."""
+    """Ultra-fast local rule-based text normalizer with noise stripping & duplicate elimination."""
     if not text:
         return ""
+
+    import re
+    # Clean noise tags like [âm nhạc], [tiếng cười], >>
+    text = re.sub(r'\[(.*?)\]', '', text)
+    text = re.sub(r'>>', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
 
     lines = text.strip().split("\n")
     cleaned = []
@@ -89,22 +94,37 @@ def fallback_normalize(text: str) -> str:
 
     for line in lines:
         line = line.strip()
-        if not line or line in seen:
+        if not line:
             continue
+        
+        # Remove consecutive duplicate sentences
+        normalized_line_key = line.lower()
+        if normalized_line_key in seen:
+            continue
+        seen.add(normalized_line_key)
 
-        seen.add(line)
-
-        # Viết hoa đầu câu
-        if line and len(line) > 1:
+        # Capitalize first letter
+        if len(line) > 1:
             line = line[0].upper() + line[1:]
 
-        # Thêm dấu câu
-        if line and not line[-1] in ".!?…:;":
+        # Add proper Vietnamese sentence punctuation
+        if not line[-1] in ".!?…:;":
             line += "."
 
         cleaned.append(line)
 
-    return "\n".join(cleaned)
+    # Group into clean readable paragraphs (3-4 sentences per block)
+    paragraphs = []
+    chunk = []
+    for line in cleaned:
+        chunk.append(line)
+        if len(chunk) >= 3:
+            paragraphs.append(" ".join(chunk))
+            chunk = []
+    if chunk:
+        paragraphs.append(" ".join(chunk))
+
+    return "\n\n".join(paragraphs) if paragraphs else "\n".join(cleaned)
 
 
 import os
@@ -118,7 +138,8 @@ def try_deepseek_api(prompt: str, api_key: str) -> Optional[str]:
         data = {
             "model": "deepseek-chat",
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3
+            "temperature": 0.2,
+            "max_tokens": 1024
         }
         req = urllib.request.Request(
             url,
@@ -126,7 +147,7 @@ def try_deepseek_api(prompt: str, api_key: str) -> Optional[str]:
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=12) as resp:
             response = json.loads(resp.read().decode("utf-8"))
         return response["choices"][0]["message"]["content"]
     except Exception as e:
@@ -142,7 +163,8 @@ def try_groq_api(prompt: str, api_key: str) -> Optional[str]:
         data = {
             "model": "llama-3.3-70b-versatile",
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3
+            "temperature": 0.2,
+            "max_tokens": 1024
         }
         req = urllib.request.Request(
             url,
@@ -150,7 +172,7 @@ def try_groq_api(prompt: str, api_key: str) -> Optional[str]:
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:
             response = json.loads(resp.read().decode("utf-8"))
         return response["choices"][0]["message"]["content"]
     except Exception as e:
@@ -180,12 +202,19 @@ def process(text: str, language: str = "Vietnamese",
         prompt = prompt_template.replace("{text}", text)
         prompt = prompt.replace("{lang}", target_lang)
 
-    # 1. Primary Provider: Google Gemini APIs
+    # 1. Primary Provider: Google Gemini APIs with optimized generationConfig
     if api_key:
         for model in GEMINI_MODELS:
             try:
                 logger.debug(f"Trying Gemini model: {model}")
-                data = {"contents": [{"parts": [{"text": prompt}]}]}
+                data = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.2,
+                        "topP": 0.8,
+                        "maxOutputTokens": 1024
+                    }
+                }
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
                 req = urllib.request.Request(

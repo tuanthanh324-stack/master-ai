@@ -17,10 +17,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from core_processor import (
     clean_latex_leaks,
+    sanitize_float_roots,
     format_solution_4steps,
     shuffle_exam_questions,
     audit_quality_check,
-    get_sqlite_db_connection
+    get_sqlite_db_connection,
+    clean_subtitle_text,
+    normalize_url
 )
 from tts_processor import safe_edge_tts_save, sanitize_text, normalize_pitch, normalize_tts_rate
 from auto_cleanup import kill_zombie_word_processes
@@ -186,6 +189,57 @@ def test_zombie_com_cleanup():
     print(f"  ✓ Zombie COM Process Sweeper executed cleanly ({killed} active zombies handled)")
 
 
+def test_float_garbage_cleanup():
+    print("\n[TEST 7] Float Precision Garbage Cleaner (0 Float Rác)...")
+    dirty_text = "Nghiệm x = 0.30000000000000004 và y = 5.000000000000001, z = 12.0"
+    clean_txt = sanitize_float_roots(dirty_text)
+    assert "0.30000000000000004" not in clean_txt
+    assert "0.3" in clean_txt
+    assert "5" in clean_txt
+    assert "12" in clean_txt
+    print("  ✓ Pristine float roots verified (Zero float garbage)")
+
+
+def test_unicode_math_symbols():
+    print("\n[TEST 8] LaTeX to Unicode SGK Math Symbol Translation...")
+    raw_tex = "Cho \\triangle ABC có \\angle A = 90^o, x \\le 5, y \\ge 10, a \\neq b, \\pi \\approx 3.14"
+    converted = clean_latex_leaks(raw_tex)
+    assert "Δ" in converted
+    assert "∠" in converted
+    assert "≤" in converted
+    assert "≥" in converted
+    assert "≠" in converted
+    assert "π" in converted
+    assert "≈" in converted
+    print("  ✓ SGK Unicode math symbol translation verified")
+
+
+def test_json3_subtitle_parsing():
+    print("\n[TEST 9] YouTube JSON3 & VTT Subtitle Parsing & Metadata Cleaning...")
+    json3_sample = '{"events": [{"segs": [{"utf8": "Xin "}, {"utf8": "chào "}]}, {"segs": [{"utf8": "các "}, {"utf8": "bạn."}]}]}'
+    parsed = clean_subtitle_text(json3_sample)
+    assert parsed == "Xin chào các bạn."
+
+    vtt_sample = "WEBVTT\n1\n00:00:01.000 --> 00:00:03.000\n<c.colorFFF>Nội dung phụ đề 1</c>\n\n2\n00:00:03.000 --> 00:00:05.000\nNội dung phụ đề 2"
+    parsed_vtt = clean_subtitle_text(vtt_sample)
+    assert "WEBVTT" not in parsed_vtt
+    assert "00:00:01" not in parsed_vtt
+    assert "Nội dung phụ đề 1 Nội dung phụ đề 2" in parsed_vtt
+    print("  ✓ JSON3 and VTT subtitle metadata cleaning verified")
+
+
+def test_url_normalization_edge_cases():
+    print("\n[TEST 10] Multi-Platform URL Normalization & Query Cleaning...")
+    dirty_tiktok = "https://www.tiktok.com/@user/video/7312345678901234567?is_from_webapp=1&sender_device=pc&q=truyen%20cuoi"
+    clean_tt = normalize_url(dirty_tiktok)
+    assert clean_tt == "https://www.tiktok.com/@user/video/7312345678901234567"
+
+    dirty_yt = "https://www.youtube.com/watch?v=dQw4w9WgXcQ&feature=shared&t=10s"
+    clean_yt = normalize_url(dirty_yt)
+    assert clean_yt == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    print("  ✓ Multi-platform URL query parameter stripping verified")
+
+
 def main():
     print("=" * 65)
     print("  LEAD QA ENGINEER FULL SYSTEM TEST SUITE (TƯ DUY NGƯỢC)")
@@ -198,6 +252,10 @@ def main():
         test_auditor_quality_check,
         test_sqlite_concurrency,
         test_zombie_com_cleanup,
+        test_float_garbage_cleanup,
+        test_unicode_math_symbols,
+        test_json3_subtitle_parsing,
+        test_url_normalization_edge_cases,
     ]
 
     passed = 0
