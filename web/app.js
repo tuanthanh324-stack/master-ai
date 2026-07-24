@@ -137,7 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     apiKeyInput.addEventListener('input', () => {
         const val = apiKeyInput.value.trim();
-        if (val) localStorage.setItem('gemini_api_key', val);
+        localStorage.setItem('gemini_api_key', val);
     });
 
     async function fetchConfig() {
