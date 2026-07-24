@@ -630,18 +630,24 @@ def transcribe_audio_with_gemini(audio_path: str, api_key: str) -> Optional[str]
             }]
         }
 
-        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={api_key}"
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(data).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            response = json.loads(resp.read().decode("utf-8"))
-        output = response["candidates"][0]["content"]["parts"][0]["text"].strip()
-        if output and len(output.split()) >= 3:
-            return output
+        models_to_try = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash"]
+        for model in models_to_try:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(data).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    response = json.loads(resp.read().decode("utf-8"))
+                output = response["candidates"][0]["content"]["parts"][0]["text"].strip()
+                if output and len(output.split()) >= 3:
+                    return output
+            except Exception:
+                continue
+        return None
     except Exception as e:
         pass
     return None
@@ -873,7 +879,7 @@ def process_gemini(
                 f"Nội dung lời thoại thô:\n{input_text}"
             )
 
-    candidate_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"]
+    candidate_models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash"]
     last_err = ""
 
     if api_key:

@@ -12,9 +12,11 @@ from logger import logger
 
 # Gemini models - ưu tiên hạn ngạch cao & tốc độ nhanh nhất
 GEMINI_MODELS = [
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
     "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b"
+    "gemini-1.5-flash"
 ]
 
 # Prompt templates

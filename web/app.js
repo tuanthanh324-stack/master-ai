@@ -192,34 +192,35 @@ document.addEventListener('DOMContentLoaded', () => {
         if (key) {
             // Live client-side Gemini validation (bypasses Render 429 rate limit block!)
             try {
-                let resG = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${key}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: "Hi" }] }],
-                        generationConfig: { maxOutputTokens: 5 }
-                    })
-                });
+                const modelsToTest = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash"];
+                let validated = false;
+                let lastErrorText = "";
                 
-                // Fallback to 1.5-flash if 2.0-flash free tier is unavailable/rate-limited (limit: 0)
-                if (!resG.ok) {
-                    console.log("Gemini 2.0-flash verification failed, trying 1.5-flash fallback...");
-                    resG = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${key}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: "Hi" }] }],
-                            generationConfig: { maxOutputTokens: 5 }
-                        })
-                    });
+                for (const m of modelsToTest) {
+                    try {
+                        const resG = await fetch(`https://generativelanguage.googleapis.com/v1/models/${m}:generateContent?key=${key}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ parts: [{ text: "Hi" }] }],
+                                generationConfig: { maxOutputTokens: 5 }
+                            })
+                        });
+                        if (resG.ok) {
+                            validated = true;
+                            gemMsg = ` | 🎉 Key Gemini XÁC NHẬN HỢP LỆ! (Mô hình ${m.replace("models/", "")} sẵn sàng)`;
+                            break;
+                        } else {
+                            const errG = await resG.json().catch(() => ({}));
+                            lastErrorText = errG?.error?.message || `HTTP ${resG.status}`;
+                        }
+                    } catch (err) {
+                        lastErrorText = err.message;
+                    }
                 }
                 
-                if (resG.ok) {
-                    gemMsg = " | 🎉 Key Gemini XÁC NHẬN HỢP LỆ! (AI sẵn sàng)";
-                } else {
-                    const errG = await resG.json().catch(() => ({}));
-                    const errMsg = errG?.error?.message || `HTTP ${resG.status}`;
-                    gemMsg = ` | ⚠️ LỖI Key Gemini: ${errMsg}`;
+                if (!validated) {
+                    gemMsg = ` | ⚠️ LỖI Key Gemini: ${lastErrorText}`;
                 }
             } catch (err) {
                 gemMsg = ` | ⚠️ Lỗi kết nối Key Gemini: ${err.message}`;
@@ -432,7 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        const candidateModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"];
+        const candidateModels = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash"];
         let lastErr = "";
         
         for (const model of candidateModels) {
