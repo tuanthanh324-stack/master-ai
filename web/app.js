@@ -293,6 +293,42 @@ document.addEventListener('DOMContentLoaded', () => {
     txtWhisper.addEventListener('input', () => updateWordCount(txtWhisper, whisperWordCount));
     txtGemini.addEventListener('input', () => updateWordCount(txtGemini, geminiWordCount));
 
+    function runLocalJsNormalizer(text) {
+        if (!text) return "";
+        // Clean brackets like [âm nhạc], [tiếng cười], [vỗ tay]
+        let cleaned = text.replace(/\[.*?\]/g, "");
+        // Clean double angles like >>
+        cleaned = cleaned.replace(/>>/g, "");
+        // Clean multiple spaces
+        cleaned = cleaned.replace(/\s+/g, " ").trim();
+        
+        // Split into sentences and capitalize
+        let lines = cleaned.split("\n");
+        let results = [];
+        let seen = new Set();
+        
+        for (let line of lines) {
+            line = line.trim();
+            if (!line) continue;
+            
+            let lower = line.toLowerCase();
+            if (seen.has(lower)) continue;
+            seen.add(lower);
+            
+            // Capitalize first letter
+            if (line.length > 1) {
+                line = line.charAt(0).toUpperCase() + line.slice(1);
+            }
+            
+            // Add punctuation if missing
+            if (!/[.!?…:;]$/.test(line)) {
+                line += ".";
+            }
+            results.push(line);
+        }
+        return results.join("\n");
+    }
+
     async function callServerGemini(rawText, apiKey) {
         const normalizedText = rawText.trim();
         const cacheKey = `gem_cache_${selMode.value}_${selLang.value}_${normalizedText.length}_${btoa(unescape(encodeURIComponent(normalizedText.substring(0, 50))))}_${btoa(unescape(encodeURIComponent(customPrompt.value.trim()))).substring(0, 50)}`;
@@ -528,30 +564,35 @@ document.addEventListener('DOMContentLoaded', () => {
                     try {
                         gemData = await callServerGemini(data.raw_text, clientApiKey);
                     } catch (srvErr) {
-                        gemData = { text: srvErr.message, status: "ERROR" };
+                        console.warn("Server Gemini failed, falling back to local JS normalizer:", srvErr);
+                        gemData = {
+                            text: runLocalJsNormalizer(data.raw_text),
+                            status: "Offline Normalizer (Do Google báo lỗi Hết hạn ngạch / Sai Key)"
+                        };
                     }
                 }
             } else {
                 try {
                     gemData = await callServerGemini(data.raw_text, '');
                 } catch (srvErr) {
-                    gemData = { text: srvErr.message, status: "ERROR" };
+                    console.warn("Server Gemini failed, falling back to local JS normalizer:", srvErr);
+                    gemData = {
+                        text: runLocalJsNormalizer(data.raw_text),
+                        status: "Offline Normalizer (Chưa nhập Key)"
+                    };
                 }
             }
 
             stopLiveTimer(true);
 
-            if (gemData.status === 'ERROR') {
-                updateProgress(85, `⚠️ Stage 1 Hoàn thành! Lỗi Gemini Stage 2: ${gemData.text}`, 'error');
+            txtGemini.value = gemData.text || '';
+            updateWordCount(txtGemini, geminiWordCount);
+            const stageStatus = gemData.status || '';
+            
+            if (stageStatus.includes("Offline Normalizer") || stageStatus.includes("CHƯA NẠP") || stageStatus.includes("Nội bộ")) {
+                updateProgress(100, `⚠️ Lỗi Key Gemini hoặc Chưa dán Key. Đã tự động định dạng bằng Bộ chuẩn hóa Offline!`, 'error');
             } else {
-                txtGemini.value = gemData.text || '';
-                updateWordCount(txtGemini, geminiWordCount);
-                const stageStatus = gemData.status || data.method || 'Thành công';
-                if (stageStatus.includes("CHƯA NẠP") || stageStatus.includes("Offline") || stageStatus.includes("Nội bộ")) {
-                    updateProgress(100, `⚠️ CHƯA NẠP GEMINI API KEY (Đang chạy Offline không có AI). Vui lòng bấm nút ⚙️ Cài đặt và dán Key để AI tóm tắt / viết lại bài!`, 'error');
-                } else {
-                    updateProgress(100, `🎉 Gemini AI đã chuẩn hóa xong bài viết! (${stageStatus})`, 'success');
-                }
+                updateProgress(100, `🎉 Gemini AI đã chuẩn hóa xong bài viết! (${stageStatus})`, 'success');
             }
         } catch (err) {
             resetTimers();
@@ -596,36 +637,40 @@ document.addEventListener('DOMContentLoaded', () => {
                     try {
                         data = await callServerGemini(rawText, clientApiKey);
                     } catch (srvErr) {
-                        data = { text: srvErr.message, status: "ERROR" };
+                        console.warn("Server Gemini failed, falling back to local JS normalizer:", srvErr);
+                        data = {
+                            text: runLocalJsNormalizer(rawText),
+                            status: "Offline Normalizer (Do Google báo lỗi Hết hạn ngạch / Sai Key)"
+                        };
                     }
                 }
             } else {
                 try {
                     data = await callServerGemini(rawText, '');
                 } catch (srvErr) {
-                    data = { text: srvErr.message, status: "ERROR" };
+                    console.warn("Server Gemini failed, falling back to local JS normalizer:", srvErr);
+                    data = {
+                        text: runLocalJsNormalizer(rawText),
+                        status: "Offline Normalizer (Chưa nhập Key)"
+                    };
                 }
             }
 
             stopLiveTimer(true);
 
-            if (data.status === 'ERROR') {
-                updateProgress(50, `❌ Lỗi Gemini: ${data.text}`, 'error');
+            txtGemini.value = data.text;
+            updateWordCount(txtGemini, geminiWordCount);
+            const st = data.status || '';
+            if (st.includes("Offline Normalizer") || st.includes("CHƯA NẠP") || st.includes("Nội bộ")) {
+                updateProgress(100, `⚠️ Lỗi Key Gemini hoặc Chưa dán Key. Đã tự động định dạng bằng Bộ chuẩn hóa Offline!`, 'error');
             } else {
-                txtGemini.value = data.text;
-                updateWordCount(txtGemini, geminiWordCount);
-                const st = data.status || '';
-                if (st.includes("CHƯA NẠP") || st.includes("Offline") || st.includes("Nội bộ")) {
-                    updateProgress(100, `⚠️ BẠN ĐANG CHẠY CHẾ ĐỘ OFFLINE (Chưa dán Gemini API Key). AI không thể phóng tác/viết lại phong cách mới! Vui lòng dán Key trong ⚙️ Cài đặt.`, 'error');
-                } else {
-                    updateProgress(100, `🎉 Gemini AI đã chuẩn hóa xong bài viết! (${st})`, 'success');
-                }
-                const stage2 = document.getElementById('txtGemini') || document.getElementById('stage2Card');
-                if (stage2) {
-                    stage2.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    stage2.classList.add('highlight-flash');
-                    setTimeout(() => stage2.classList.remove('highlight-flash'), 1500);
-                }
+                updateProgress(100, `🎉 Gemini AI đã chuẩn hóa xong bài viết! (${st})`, 'success');
+            }
+            const stage2 = document.getElementById('txtGemini') || document.getElementById('stage2Card');
+            if (stage2) {
+                stage2.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                stage2.classList.add('highlight-flash');
+                setTimeout(() => stage2.classList.remove('highlight-flash'), 1500);
             }
         } catch (err) {
             stopLiveTimer(false);
