@@ -137,7 +137,7 @@ def normalize_url(raw_url: str) -> str:
         return ""
 
     # TikTok Normalizer
-    tiktok_match = re.search(r'(https?://(?:www\.|vt\.|vm\.)?tiktok\.com/@[^/]+/video/\d+)', url)
+    tiktok_match = re.search(r'(https?://(?:www\.|vt\.|vm\.)?tiktok\.com/@[^/]*/video/\d+)', url)
     if tiktok_match:
         return tiktok_match.group(1)
 
@@ -404,13 +404,13 @@ def normalize_url(raw_url: str) -> str:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
             with urllib.request.urlopen(req, timeout=3.5) as resp:
                 final_u = resp.geturl()
-                if match := re.search(r'(https?://(?:www\.)?tiktok\.com/@[^/]+/video/\d+)', final_u):
+                if match := re.search(r'(https?://(?:www\.)?tiktok\.com/@[^/]*/video/\d+)', final_u):
                     return match.group(1)
         except Exception:
             pass
 
     # TikTok Normalizer
-    tiktok_match = re.search(r'(https?://(?:www\.|vt\.|vm\.)?tiktok\.com/@[^/]+/video/\d+)', url)
+    tiktok_match = re.search(r'(https?://(?:www\.|vt\.|vm\.)?tiktok\.com/@[^/]*/video/\d+)', url)
     if tiktok_match:
         return tiktok_match.group(1)
 

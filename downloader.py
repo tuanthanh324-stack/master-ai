@@ -53,7 +53,7 @@ def normalize_url(url: str) -> str:
     logger.debug(f"Normalizing URL: {url[:50]}...")
 
     # TikTok - Standard and short URLs
-    if match := re.search(r'(https?://(?:www\.|vt\.|vm\.)?tiktok\.com/@[^/]+/video/\d+)', url):
+    if match := re.search(r'(https?://(?:www\.|vt\.|vm\.)?tiktok\.com/@[^/]*/video/\d+)', url):
         return match.group(1)
     if match := re.search(r'(https?://(?:vt\.|vm\.)tiktok\.com/[A-Za-z0-9_]+)', url):
         return match.group(1)
