@@ -24,17 +24,51 @@ CONFIG_FILE = SCRIPT_DIR / "config.json"
 # FFmpeg auto-detect
 # ============================================
 def get_ffmpeg() -> str:
-    """Lấy đường dẫn FFmpeg với nhiều fallback (Tối ưu Linux / Cloud)."""
+    """Lấy đường dẫn FFmpeg với nhiều fallback và tự động tải (Tối ưu Linux / Cloud)."""
     # 1. System PATH (highest priority on Linux / Render)
     ffmpeg_system = shutil.which("ffmpeg")
     if ffmpeg_system:
         return ffmpeg_system
 
-    # 2. Local bundled (Windows)
+    # 2. Local downloaded static Linux binary
+    local_linux_ffmpeg = SCRIPT_DIR / "temp" / "ffmpeg-linux"
+    if local_linux_ffmpeg.exists():
+        try:
+            os.chmod(local_linux_ffmpeg, 0o755)
+        except Exception:
+            pass
+        return str(local_linux_ffmpeg)
+
+    # 3. Dynamic Auto-download static Linux binary (Bulletproof fallback for Python buildpack on Render)
+    if os.name != 'nt':
+        try:
+            print("⚠️ FFmpeg not found on Linux path! Auto-downloading static Linux amd64 binary...")
+            import urllib.request
+            import zipfile
+            import io
+            
+            # Download zip from reliable static mirror
+            url = "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffmpeg-4.4.1-linux-64.zip"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=30) as response:
+                zip_data = response.read()
+                
+            with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
+                # Extract 'ffmpeg' file as 'ffmpeg-linux' in temp folder
+                with z.open('ffmpeg') as source, open(local_linux_ffmpeg, 'wb') as target:
+                    shutil.copyfileobj(source, target)
+                    
+            os.chmod(local_linux_ffmpeg, 0o755)
+            print("🎉 FFmpeg static Linux binary downloaded successfully!")
+            return str(local_linux_ffmpeg)
+        except Exception as e:
+            print(f"❌ Failed to auto-download static FFmpeg: {e}")
+
+    # 4. Local bundled (Windows)
     if FFMPEG_PATH.exists() and os.name == 'nt':
         return str(FFMPEG_PATH)
 
-    # 3. Common Windows locations
+    # 5. Common Windows locations
     common_paths = [
         r"C:\ffmpeg\bin\ffmpeg.exe",
         r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
@@ -44,7 +78,7 @@ def get_ffmpeg() -> str:
         if os.path.exists(path):
             return path
 
-    # 4. Fallback to PATH resolution
+    # 6. Fallback to PATH resolution
     return "ffmpeg"
 
 # Auto-add FFmpeg to PATH
