@@ -227,7 +227,7 @@ def process(text: str, language: str = "Vietnamese",
                     },
                     "safetySettings": safety_settings
                 }
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
 
                 req = urllib.request.Request(
                     url,

@@ -630,7 +630,7 @@ def transcribe_audio_with_gemini(audio_path: str, api_key: str) -> Optional[str]
             }]
         }
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={api_key}"
         req = urllib.request.Request(
             url,
             data=json.dumps(data).encode("utf-8"),
@@ -895,7 +895,7 @@ def process_gemini(
                     "safetySettings": safety_settings
                 }
                 req = urllib.request.Request(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}",
+                    f"https://generativelanguage.googleapis.com/v1/models/{model_name}:generateContent?key={api_key}",
                     data=json.dumps(data).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                     method="POST"

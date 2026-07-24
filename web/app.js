@@ -192,7 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (key) {
             // Live client-side Gemini validation (bypasses Render 429 rate limit block!)
             try {
-                let resG = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+                let resG = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${key}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -204,7 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Fallback to 1.5-flash if 2.0-flash free tier is unavailable/rate-limited (limit: 0)
                 if (!resG.ok) {
                     console.log("Gemini 2.0-flash verification failed, trying 1.5-flash fallback...");
-                    resG = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
+                    resG = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${key}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -437,7 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         for (const model of candidateModels) {
             try {
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
