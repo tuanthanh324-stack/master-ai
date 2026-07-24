@@ -23,7 +23,7 @@ import urllib.request
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Tuple, Optional
-
+from config import get_ffmpeg
 # Optimize PyTorch CPU Threads for Maximum Speed
 try:
     import torch
