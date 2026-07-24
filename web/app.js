@@ -184,6 +184,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const key = apiKeyInput.value.trim();
         const elKey = elevenLabsKeyInput ? elevenLabsKeyInput.value.trim() : '';
         
+        // Save to browser localStorage immediately to persist key across page restarts/refreshes
+        localStorage.setItem('gemini_api_key', key);
+        
         let gemMsg = "";
         if (key) {
             // Live client-side Gemini validation (bypasses Render 429 rate limit block!)
@@ -214,8 +217,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ api_key: key, elevenlabs_api_key: elKey })
             });
-            const data = await res.json();
-            const finalMsg = data.message + gemMsg;
+            const data = await res.json().catch(() => ({}));
+            const serverMsg = data.message || "Đã lưu Cấu Hình API Keys thành công!";
+            const finalMsg = serverMsg + gemMsg;
             showMsg(finalMsg, data.success ? 'success' : 'error');
         } catch (err) {
             showMsg('Lỗi kết nối lưu API key: ' + err.message, 'error');

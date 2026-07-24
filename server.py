@@ -372,7 +372,7 @@ class MasterAIHandler(SimpleHTTPRequestHandler):
                     except Exception:
                         pass
 
-                self._send_json({"success": ok1 and ok2, "message": f"Đã lưu Cấu Hình API Keys!{gem_msg}{el_msg}"})
+                self._send_json({"success": ok1 and ok2, "message": f"Đã lưu Cấu Hình API Keys thành công!{el_msg}"})
 
             elif url_path == '/api/tts':
                 text = req_data.get('text', '')
