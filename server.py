@@ -351,32 +351,6 @@ class MasterAIHandler(SimpleHTTPRequestHandler):
                 elevenlabs_api_key = req_data.get('elevenlabs_api_key', '').strip()
                 ok1 = set_gemini_key(api_key)
                 ok2 = set_elevenlabs_key(elevenlabs_api_key) if 'elevenlabs_api_key' in req_data else True
-                
-                gem_msg = ""
-                if api_key:
-                    try:
-                        val_data = {
-                            "contents": [{"parts": [{"text": "Hi"}]}],
-                            "generationConfig": {"maxOutputTokens": 5}
-                        }
-                        req_g = urllib.request.Request(
-                            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}",
-                            data=json.dumps(val_data).encode("utf-8"),
-                            headers={"Content-Type": "application/json"},
-                            method="POST"
-                        )
-                        with urllib.request.urlopen(req_g, timeout=6) as r_g:
-                            if r_g.status == 200:
-                                gem_msg = " | 🎉 Key Gemini XÁC NHẬN HỢP LỆ! (AI sẵn sàng)"
-                    except urllib.error.HTTPError as he_g:
-                        if he_g.code in (400, 403):
-                            gem_msg = " | ⚠️ LỖI: Key Gemini KHÔNG HỢP LỆ hoặc SAI! Vui lòng lấy Key mới tại https://aistudio.google.com/"
-                        elif he_g.code == 429:
-                            gem_msg = " | ⚠️ Key Gemini TẠM HẾT HẠN NGẠCH (429 Rate Limit)!"
-                        else:
-                            gem_msg = f" | ⚠️ Lỗi kết nối Key Gemini ({he_g.code})"
-                    except Exception as ge:
-                        gem_msg = f" | ⚠️ Lỗi kiểm tra Key Gemini ({str(ge)[:40]})"
 
                 el_msg = ""
                 if elevenlabs_api_key:

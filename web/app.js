@@ -183,6 +183,31 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const key = apiKeyInput.value.trim();
         const elKey = elevenLabsKeyInput ? elevenLabsKeyInput.value.trim() : '';
+        
+        let gemMsg = "";
+        if (key) {
+            // Live client-side Gemini validation (bypasses Render 429 rate limit block!)
+            try {
+                const resG = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: "Hi" }] }],
+                        generationConfig: { maxOutputTokens: 5 }
+                    })
+                });
+                if (resG.ok) {
+                    gemMsg = " | 🎉 Key Gemini XÁC NHẬN HỢP LỆ! (AI sẵn sàng)";
+                } else {
+                    const errG = await resG.json().catch(() => ({}));
+                    const errMsg = errG?.error?.message || `HTTP ${resG.status}`;
+                    gemMsg = ` | ⚠️ LỖI Key Gemini: ${errMsg}`;
+                }
+            } catch (err) {
+                gemMsg = ` | ⚠️ Lỗi kết nối Key Gemini: ${err.message}`;
+            }
+        }
+
         try {
             const res = await fetch('/api/config', {
                 method: 'POST',
@@ -190,7 +215,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ api_key: key, elevenlabs_api_key: elKey })
             });
             const data = await res.json();
-            showMsg(data.message, data.success ? 'success' : 'error');
+            const finalMsg = data.message + gemMsg;
+            showMsg(finalMsg, data.success ? 'success' : 'error');
         } catch (err) {
             showMsg('Lỗi kết nối lưu API key: ' + err.message, 'error');
         } finally {
@@ -266,6 +292,92 @@ document.addEventListener('DOMContentLoaded', () => {
 
     txtWhisper.addEventListener('input', () => updateWordCount(txtWhisper, whisperWordCount));
     txtGemini.addEventListener('input', () => updateWordCount(txtGemini, geminiWordCount));
+
+    async function callServerGemini(rawText, apiKey) {
+        const gemController = new AbortController();
+        const gemTimeoutId = setTimeout(() => gemController.abort(), 45000);
+        try {
+            const gemRes = await fetch('/api/gemini', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: gemController.signal,
+                body: JSON.stringify({
+                    input_text: rawText,
+                    language: selLang.value,
+                    prompt_custom: customPrompt.value.trim(),
+                    api_key: apiKey,
+                    prompt_mode: selMode.value
+                })
+            });
+            if (!gemRes.ok) throw new Error(`Server phản hồi lỗi HTTP ${gemRes.status}`);
+            return await gemRes.json();
+        } finally {
+            clearTimeout(gemTimeoutId);
+        }
+    }
+
+    async function runGeminiClientSide(inputText, language, promptCustom, apiKey, promptMode) {
+        const langMap = {"Vietnamese": "tiếng Việt", "English": "English", "Spanish": "Español", "French": "Français", "German": "Deutsch"};
+        const targetLang = langMap[language] || "tiếng Việt";
+        
+        let prompt = "";
+        if (promptCustom) {
+            prompt = `Bạn là chuyên gia phóng tác kịch bản và sáng tạo nội dung xuất sắc. Hãy viết lại toàn bộ đoạn văn bản ${targetLang} dưới đây theo đúng yêu cầu:\nYÊU CẦU ĐẶC BIỆT: ${promptCustom}\n\nQUY TẮC BẮT BUỘC:\n1. Loại bỏ hoàn toàn các ký tự nhiễu như [âm nhạc], [tiếng cười], [vỗ tay], >>...\n2. Tự động bổ sung chi tiết bối cảnh xung quanh, không gian, miêu tả cảm xúc nhân vật và diễn biến sinh động.\n3. Không giữ nguyên câu từ thô vụng cũ, hãy viết lại bằng văn phong mượt mà, cuốn hút và trau chuốt nhất.\n\nNội dung lời thoại thô:\n${inputText}`;
+        } else {
+            if (promptMode === "rewrite") {
+                prompt = `Bạn là tác giả văn học và chuyên gia phóng tác kịch bản video. Hãy viết lại đoạn văn ${targetLang} dưới đây thành một bài văn phóng tác sinh động, hấp dẫn. Loại bỏ hoàn toàn các nhãn nhiễu như [âm nhạc], [tiếng cười], >>... Hãy tự động bổ sung chi tiết bối cảnh, miêu tả khung cảnh xung quanh, không gian, nhân vật, cảm xúc và nâng cấp ngôn từ cuốn hút nhất:\n\n${inputText}`;
+            } else if (promptMode === "summary") {
+                prompt = `Bạn là chuyên gia tóm tắt bài viết. Hãy tổng hợp và tóm tắt đoạn văn bản ${targetLang} dưới đây thành các ý chính cô đọng, rõ ràng, phân đoạn logic có gạch đầu dòng ngắn gọn:\n\n${inputText}`;
+            } else if (promptMode === "social") {
+                prompt = `Bạn là sáng tạo nội dung mạng xã hội chuyên nghiệp (TikTok, Facebook, Reels). Hãy viết lại đoạn văn bản ${targetLang} dưới đây thành một bài viết cuốn hút, có tiêu đề hấp dẫn, bổ sung icon cảm xúc và kêu gọi tương tác sinh động:\n\n${inputText}`;
+            } else if (promptMode === "lecture") {
+                prompt = `Bạn là trợ lý học tập bài giảng. Hãy tổng hợp đoạn văn bản ${targetLang} dưới đây thành Đề cương bài học chuẩn chỉnh gồm: 1. Ý chính cốt lõi, 2. Các thuật ngữ / công thức cần nhớ, 3. Các bước hướng dẫn chi tiết:\n\n${inputText}`;
+            } else { // verbatim
+                prompt = `Bạn là chuyên gia biên tập lời thoại video chuyên nghiệp. Hãy biên tập lại toàn bộ đoạn văn bản ${targetLang} dưới đây:\n1. BẢO TOÀN TRỌN VẸN 100% TOÀN BỘ LỜI NÓI CỦA NHÂN VẬT TỪ ĐẦU ĐẾN CUỐI: Giữ đầy đủ tất cả các câu từ, thông tin. KHÔNG ĐƯỢC CẮT NGẮN, KHÔNG DỪNG GIỮA CHỪNG, KHÔNG TÓM TẮT BẤT KỲ CÂU NÀO.\n2. Sửa lỗi chính tả, thêm dấu câu chính xác, ngắt đoạn văn bản thành các đoạn mượt mà, dễ đọc.\n3. CHỈ TRẢ VỀ DUY NHẤT VĂN BẢN LỜI THOẠI ĐÃ CHỈNH SỬA. KHÔNG THÊM LỜI CHÀO, NỐT GHI CHÚ HAY BẤT KỲ DÒNG NÀO KHÁC.\n\nNội dung lời thoại thô:\n${inputText}`;
+            }
+        }
+
+        const candidateModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"];
+        let lastErr = "";
+        
+        for (const model of candidateModels) {
+            try {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: {
+                            temperature: 0.4,
+                            topP: 0.9,
+                            maxOutputTokens: 8192
+                        },
+                        safetySettings: [
+                            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                        ]
+                    })
+                });
+                
+                if (!res.ok) {
+                    const errorJson = await res.json().catch(() => ({}));
+                    throw new Error(errorJson?.error?.message || `HTTP ${res.status}`);
+                }
+                
+                const data = await res.json();
+                if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+                    const text = data.candidates[0].content.parts[0].text.trim();
+                    return { text, status: `Thành công (Direct Client-Side AI | ${model})` };
+                }
+            } catch (err) {
+                lastErr = err.message;
+                console.warn(`Direct model ${model} failed, trying next:`, err);
+            }
+        }
+        throw new Error(lastErr || "Không thể kết nối đến API Gemini từ trình duyệt.");
+    }
 
     // ===== STAGE 1 & STAGE 2 PROCESS =====
     btnProcess.addEventListener('click', triggerProcess);
@@ -355,28 +467,35 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             updateProgress(85, `🤖 STAGE 2: Gemini AI đang chuẩn hóa bài viết...`, 'info');
-            const gemController = new AbortController();
-            const gemTimeoutId = setTimeout(() => gemController.abort(), 45000);
-
-            let gemRes;
-            try {
-                gemRes = await fetch('/api/gemini', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    signal: gemController.signal,
-                    body: JSON.stringify({
-                        input_text: data.raw_text,
-                        language: selLang.value,
-                        prompt_custom: customPrompt.value.trim(),
-                        api_key: apiKeyInput.value.trim() || localStorage.getItem('gemini_api_key') || '',
-                        prompt_mode: selMode.value
-                    })
-                });
-            } finally {
-                clearTimeout(gemTimeoutId);
+            
+            let gemData;
+            const clientApiKey = apiKeyInput.value.trim() || localStorage.getItem('gemini_api_key') || '';
+            
+            if (clientApiKey) {
+                try {
+                    gemData = await runGeminiClientSide(
+                        data.raw_text,
+                        selLang.value,
+                        customPrompt.value.trim(),
+                        clientApiKey,
+                        selMode.value
+                    );
+                } catch (clientErr) {
+                    console.log("Client-side Gemini failed, falling back to server:", clientErr);
+                    try {
+                        gemData = await callServerGemini(data.raw_text, clientApiKey);
+                    } catch (srvErr) {
+                        gemData = { text: srvErr.message, status: "ERROR" };
+                    }
+                }
+            } else {
+                try {
+                    gemData = await callServerGemini(data.raw_text, '');
+                } catch (srvErr) {
+                    gemData = { text: srvErr.message, status: "ERROR" };
+                }
             }
 
-            const gemData = await gemRes.json();
             stopLiveTimer(true);
 
             if (gemData.status === 'ERROR') {
@@ -418,20 +537,33 @@ document.addEventListener('DOMContentLoaded', () => {
         updateProgress(85, '⚡ Gemini AI đang chuẩn hóa và biên tập bài viết...', 'info');
 
         try {
-            const res = await fetch('/api/gemini', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    input_text: rawText,
-                    language: selLang.value,
-                    prompt_custom: customPrompt.value.trim(),
-                    api_key: apiKeyInput.value.trim() || localStorage.getItem('gemini_api_key') || '',
-                    prompt_mode: selMode.value
-                })
-            });
+            let data;
+            const clientApiKey = apiKeyInput.value.trim() || localStorage.getItem('gemini_api_key') || '';
+            if (clientApiKey) {
+                try {
+                    data = await runGeminiClientSide(
+                        rawText,
+                        selLang.value,
+                        customPrompt.value.trim(),
+                        clientApiKey,
+                        selMode.value
+                    );
+                } catch (clientErr) {
+                    console.log("Client-side manual Gemini failed, falling back to server:", clientErr);
+                    try {
+                        data = await callServerGemini(rawText, clientApiKey);
+                    } catch (srvErr) {
+                        data = { text: srvErr.message, status: "ERROR" };
+                    }
+                }
+            } else {
+                try {
+                    data = await callServerGemini(rawText, '');
+                } catch (srvErr) {
+                    data = { text: srvErr.message, status: "ERROR" };
+                }
+            }
 
-            if (!res.ok) throw new Error(`Server phản hồi lỗi HTTP ${res.status}`);
-            const data = await res.json();
             stopLiveTimer(true);
 
             if (data.status === 'ERROR') {
