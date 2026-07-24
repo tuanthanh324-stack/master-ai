@@ -186,6 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Save to browser localStorage immediately to persist key across page restarts/refreshes
         localStorage.setItem('gemini_api_key', key);
+        clearOldGeminiCache();
         
         let gemMsg = "";
         if (key) {
@@ -347,14 +348,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return results.join("\n");
     }
 
-    async function callServerGemini(rawText, apiKey) {
+    async function callServerGemini(rawText, apiKey, bypassCache = false) {
         const normalizedText = rawText.trim();
         const cacheKey = `gem_cache_${selMode.value}_${selLang.value}_${normalizedText.length}_${btoa(unescape(encodeURIComponent(normalizedText.substring(0, 50))))}_${btoa(unescape(encodeURIComponent(customPrompt.value.trim()))).substring(0, 50)}`;
         
-        const cachedResult = localStorage.getItem(cacheKey);
-        if (cachedResult) {
-            console.log("Gemini server-fallback loaded from cache:", cacheKey);
-            return { text: cachedResult, status: "Thành công (Server Fallback | Đã lấy từ bộ nhớ đệm Cache 0.0s)" };
+        if (!bypassCache) {
+            const cachedResult = localStorage.getItem(cacheKey);
+            if (cachedResult) {
+                console.log("Gemini server-fallback loaded from cache:", cacheKey);
+                return { text: cachedResult, status: "Thành công (Server Fallback | Đã lấy từ bộ nhớ đệm Cache 0.0s)" };
+            }
         }
 
         const gemController = new AbortController();
@@ -397,14 +400,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function runGeminiClientSide(inputText, language, promptCustom, apiKey, promptMode) {
+    async function runGeminiClientSide(inputText, language, promptCustom, apiKey, promptMode, bypassCache = false) {
         const normalizedText = inputText.trim();
         const cacheKey = `gem_cache_${promptMode}_${language}_${normalizedText.length}_${btoa(unescape(encodeURIComponent(normalizedText.substring(0, 50))))}_${btoa(unescape(encodeURIComponent(promptCustom))).substring(0, 50)}`;
         
-        const cachedResult = localStorage.getItem(cacheKey);
-        if (cachedResult) {
-            console.log("Gemini client-side loaded from cache:", cacheKey);
-            return { text: cachedResult, status: "Thành công (Direct Client-Side AI | Đã lấy từ bộ nhớ đệm Cache 0.0s)" };
+        if (!bypassCache) {
+            const cachedResult = localStorage.getItem(cacheKey);
+            if (cachedResult) {
+                console.log("Gemini client-side loaded from cache:", cacheKey);
+                return { text: cachedResult, status: "Thành công (Direct Client-Side AI | Đã lấy từ bộ nhớ đệm Cache 0.0s)" };
+            }
         }
 
         const langMap = {"Vietnamese": "tiếng Việt", "English": "English", "Spanish": "Español", "French": "Français", "German": "Deutsch"};
@@ -648,12 +653,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         selLang.value,
                         customPrompt.value.trim(),
                         clientApiKey,
-                        selMode.value
+                        selMode.value,
+                        true // Bypass cache for manual run
                     );
                 } catch (clientErr) {
                     console.log("Client-side manual Gemini failed, falling back to server:", clientErr);
                     try {
-                        data = await callServerGemini(rawText, clientApiKey);
+                        data = await callServerGemini(rawText, clientApiKey, true); // Bypass cache for manual run
                     } catch (srvErr) {
                         console.warn("Server Gemini failed, falling back to local JS normalizer:", srvErr);
                         data = {
