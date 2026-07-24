@@ -21,6 +21,7 @@ import subprocess
 import threading
 import urllib.request
 import urllib.parse
+import base64
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Tuple, Optional
 from config import get_ffmpeg
@@ -642,10 +643,18 @@ def transcribe_audio_with_gemini(audio_path: str, api_key: str) -> Optional[str]
                 )
                 with urllib.request.urlopen(req, timeout=15) as resp:
                     response = json.loads(resp.read().decode("utf-8"))
-                output = response["candidates"][0]["content"]["parts"][0]["text"].strip()
-                if output and len(output.split()) >= 3:
+                
+                candidates = response.get("candidates", [{}])
+                content = candidates[0].get("content", {})
+                parts = content.get("parts", [])
+                output = parts[0].get("text", "").strip() if parts else ""
+                
+                if not output:
+                    return "Không phát hiện lời thoại trong video (Video chỉ có nhạc hoặc im lặng)."
+                
+                if output and len(output.split()) >= 1:
                     return output
-            except Exception:
+            except Exception as e:
                 continue
         return None
     except Exception as e:
