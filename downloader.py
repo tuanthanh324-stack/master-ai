@@ -34,6 +34,7 @@ if os.name == 'nt':
         _orig_popen(self, *args, **kwargs)
     subprocess.Popen.__init__ = _patched_popen
 
+SUB_KWARGS = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 
 
@@ -169,7 +170,7 @@ def download_tiktok_api(url: str, output_mp3: str) -> Tuple[bool, Optional[str]]
                                 "-i", str(temp_bin),
                                 "-vn", "-acodec", "libmp3lame", "-q:a", "2",
                                 output_mp3
-                            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8, creationflags=NO_WINDOW)
+                            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8, **SUB_KWARGS)
                             try: temp_bin.unlink()
                             except: pass
                     except Exception:
@@ -196,7 +197,7 @@ def download_tiktok_api(url: str, output_mp3: str) -> Tuple[bool, Optional[str]]
                             "-i", str(temp_mp4),
                             "-vn", "-acodec", "libmp3lame", "-q:a", "2",
                             output_mp3
-                        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, creationflags=NO_WINDOW)
+                        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, **SUB_KWARGS)
                         try: temp_mp4.unlink()
                         except: pass
 
@@ -428,7 +429,7 @@ def download_audio(url: str) -> Tuple[Optional[str], Optional[str]]:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=Config.DOWNLOAD_TIMEOUT,
-            creationflags=NO_WINDOW
+            **SUB_KWARGS
         )
 
         if Path(audio_path).exists() and Path(audio_path).stat().st_size > 1000:

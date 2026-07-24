@@ -57,6 +57,11 @@ WEB_DIR = os.path.join(SCRIPT_DIR, "web")
 PORT = int(os.environ.get("PORT", os.environ.get("MASTERAI_PORT", 7860)))
 
 def auto_open_browser():
+    # Skip automatic browser opening in cloud / Docker environment
+    is_cloud = bool(os.environ.get("RENDER") or os.environ.get("CONTAINER") or os.environ.get("HEADLESS") or (os.environ.get("PORT") and os.environ.get("PORT") != "7860"))
+    if is_cloud:
+        return
+
     time.sleep(0.8)
     url = f"http://127.0.0.1:{PORT}"
     
@@ -128,6 +133,14 @@ class MasterAIHandler(SimpleHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         pass
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
+        self.send_header('Access-Control-Max-Age', '86400')
+        self.end_headers()
 
     def do_GET(self):
         try:
@@ -334,11 +347,37 @@ class MasterAIHandler(SimpleHTTPRequestHandler):
                     self._send_json({"text": norm_text, "status": f"Thành công (Chuẩn hóa Nội bộ) | {len(norm_text.split())} từ"})
 
             elif url_path == '/api/config':
-                api_key = req_data.get('api_key', '')
+                api_key = req_data.get('api_key', '').strip()
                 elevenlabs_api_key = req_data.get('elevenlabs_api_key', '').strip()
                 ok1 = set_gemini_key(api_key)
                 ok2 = set_elevenlabs_key(elevenlabs_api_key) if 'elevenlabs_api_key' in req_data else True
                 
+                gem_msg = ""
+                if api_key:
+                    try:
+                        val_data = {
+                            "contents": [{"parts": [{"text": "Hi"}]}],
+                            "generationConfig": {"maxOutputTokens": 5}
+                        }
+                        req_g = urllib.request.Request(
+                            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}",
+                            data=json.dumps(val_data).encode("utf-8"),
+                            headers={"Content-Type": "application/json"},
+                            method="POST"
+                        )
+                        with urllib.request.urlopen(req_g, timeout=6) as r_g:
+                            if r_g.status == 200:
+                                gem_msg = " | 🎉 Key Gemini XÁC NHẬN HỢP LỆ! (AI sẵn sàng)"
+                    except urllib.error.HTTPError as he_g:
+                        if he_g.code in (400, 403):
+                            gem_msg = " | ⚠️ LỖI: Key Gemini KHÔNG HỢP LỆ hoặc SAI! Vui lòng lấy Key mới tại https://aistudio.google.com/"
+                        elif he_g.code == 429:
+                            gem_msg = " | ⚠️ Key Gemini TẠM HẾT HẠN NGẠCH (429 Rate Limit)!"
+                        else:
+                            gem_msg = f" | ⚠️ Lỗi kết nối Key Gemini ({he_g.code})"
+                    except Exception as ge:
+                        gem_msg = f" | ⚠️ Lỗi kiểm tra Key Gemini ({str(ge)[:40]})"
+
                 el_msg = ""
                 if elevenlabs_api_key:
                     try:
@@ -357,7 +396,7 @@ class MasterAIHandler(SimpleHTTPRequestHandler):
                     except Exception:
                         pass
 
-                self._send_json({"success": ok1 and ok2, "message": f"Đã lưu Cấu Hình API Keys thành công!{el_msg}"})
+                self._send_json({"success": ok1 and ok2, "message": f"Đã lưu Cấu Hình API Keys!{gem_msg}{el_msg}"})
 
             elif url_path == '/api/tts':
                 text = req_data.get('text', '')
@@ -587,12 +626,14 @@ class MasterAIHandler(SimpleHTTPRequestHandler):
         if range_hdr and range_hdr.startswith('bytes='):
             try:
                 parts = range_hdr[6:].split('-')
-                start = int(parts[0]) if parts[0] else 0
-                end = int(parts[1]) if parts[1] else size - 1
-                end = min(end, size - 1)
+                start = int(parts[0]) if parts[0] and parts[0].isdigit() else 0
+                end = int(parts[1]) if len(parts) > 1 and parts[1] and parts[1].isdigit() else size - 1
+                start = max(0, min(start, max(0, size - 1)))
+                end = max(start, min(end, max(0, size - 1)))
 
                 self.send_response(206)
                 self.send_header('Content-Type', mime)
+                self.send_header('Accept-Ranges', 'bytes')
                 self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
                 self.send_header('Content-Length', str(end - start + 1))
                 self.send_header('Access-Control-Allow-Origin', '*')
@@ -602,8 +643,9 @@ class MasterAIHandler(SimpleHTTPRequestHandler):
                     f.seek(start)
                     self.wfile.write(f.read(end - start + 1))
                 return
-            except Exception:
-                pass
+            except Exception as e:
+                try: sys.stderr.write(f"Range streaming error: {e}\n")
+                except Exception: pass
 
         self.send_response(200)
         self.send_header('Content-Type', mime)

@@ -1,4 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
+    function getErrorMessage(data, fallback = 'Lỗi không xác định') {
+        if (!data) return fallback;
+        if (typeof data === 'string') return data;
+        return data.error || data.message || data.detail || fallback;
+    }
+
     async function safeFetch(url, options = {}, retries = 2) {
         for (let i = 0; i <= retries; i++) {
             try {
@@ -129,14 +135,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const elevenLabsKeyInput = document.getElementById('elevenLabsKeyInput');
     const btnToggleElKeyVis = document.getElementById('btnToggleElKeyVis');
 
+    apiKeyInput.addEventListener('input', () => {
+        const val = apiKeyInput.value.trim();
+        if (val) localStorage.setItem('gemini_api_key', val);
+    });
+
     async function fetchConfig() {
         try {
             const res = await fetch('/api/config');
             const data = await res.json();
-            if (data.api_key) apiKeyInput.value = data.api_key;
+            if (data.api_key) {
+                apiKeyInput.value = data.api_key;
+                localStorage.setItem('gemini_api_key', data.api_key);
+            } else {
+                const localKey = localStorage.getItem('gemini_api_key');
+                if (localKey) apiKeyInput.value = localKey;
+            }
             if (data.elevenlabs_api_key && elevenLabsKeyInput) elevenLabsKeyInput.value = data.elevenlabs_api_key;
         } catch (err) {
             console.error('Lỗi nạp config:', err);
+            const localKey = localStorage.getItem('gemini_api_key');
+            if (localKey) apiKeyInput.value = localKey;
         }
     }
 
@@ -315,9 +334,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             resetTimers();
 
-            if (data.error) {
+            if (data.error || data.success === false) {
                 stopLiveTimer(false);
-                updateProgress(0, `❌ Lỗi: ${data.error}`, 'error');
+                updateProgress(0, `❌ Lỗi: ${getErrorMessage(data)}`, 'error');
                 btnProcess.disabled = false;
                 processSpinner.style.display = 'none';
                 return;
@@ -349,7 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         input_text: data.raw_text,
                         language: selLang.value,
                         prompt_custom: customPrompt.value.trim(),
-                        api_key: apiKeyInput.value.trim(),
+                        api_key: apiKeyInput.value.trim() || localStorage.getItem('gemini_api_key') || '',
                         prompt_mode: selMode.value
                     })
                 });
@@ -406,7 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     input_text: rawText,
                     language: selLang.value,
                     prompt_custom: customPrompt.value.trim(),
-                    api_key: apiKeyInput.value.trim(),
+                    api_key: apiKeyInput.value.trim() || localStorage.getItem('gemini_api_key') || '',
                     prompt_mode: selMode.value
                 })
             });
@@ -420,7 +439,12 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 txtGemini.value = data.text;
                 updateWordCount(txtGemini, geminiWordCount);
-                updateProgress(100, `🎉 Gemini AI đã chuẩn hóa xong bài viết! (${data.status})`, 'success');
+                const st = data.status || '';
+                if (st.includes("CHƯA NẠP") || st.includes("Offline") || st.includes("Nội bộ")) {
+                    updateProgress(100, `⚠️ BẠN ĐANG CHẠY CHẾ ĐỘ OFFLINE (Chưa dán Gemini API Key). AI không thể phóng tác/viết lại phong cách mới! Vui lòng dán Key trong ⚙️ Cài đặt.`, 'error');
+                } else {
+                    updateProgress(100, `🎉 Gemini AI đã chuẩn hóa xong bài viết! (${st})`, 'success');
+                }
                 const stage2 = document.getElementById('txtGemini') || document.getElementById('stage2Card');
                 if (stage2) {
                     stage2.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -490,7 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.success) {
                     previewUrl = data.audio_url;
                 } else {
-                    throw new Error(data.error || "Không thể tạo thử giọng");
+                    throw new Error(getErrorMessage(data, "Không thể tạo thử giọng"));
                 }
             }
 
@@ -596,8 +620,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const res = await fetch(`/api/voice/analyze?file=${encodeURIComponent(voiceVal)}`);
                 const data = await res.json();
 
-                if (data.error) {
-                    alert('Lỗi phân tích: ' + data.error);
+                if (data.error || data.success === false) {
+                    alert('Lỗi phân tích: ' + getErrorMessage(data));
                 } else {
                     freqMeterResults.style.display = 'grid';
                     pitchContourWrapper.style.display = 'flex';
@@ -708,7 +732,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateProgress(100, `🎉 STAGE 3 Hoàn thành! Đã lồng tiếng và ghép nhạc nền thành công tệp: ${data.filename}`, 'success');
                 loadHistory();
             } else {
-                alert('Lỗi tạo giọng đọc: ' + (data.error || 'Thất bại'));
+                alert('Lỗi tạo giọng đọc: ' + getErrorMessage(data, 'Thất bại'));
                 updateProgress(0, '❌ Lỗi STAGE 3', 'error');
             }
         } catch (err) {
@@ -770,7 +794,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     btnChooseFile.textContent = '📁 Chọn mẫu audio 5s';
                     loadVoiceDropdownAndGallery();
                 } else {
-                    alert('Lỗi: ' + data.error);
+                    alert('Lỗi: ' + getErrorMessage(data));
                 }
             } catch (err) {
                 alert('Lỗi tải file: ' + err.message);
@@ -801,7 +825,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.success) {
                 startMinerPolling();
             } else {
-                alert('Lỗi: ' + data.message);
+                alert('Lỗi: ' + getErrorMessage(data, 'Không thể khởi chạy Auto Miner'));
                 btnStartMining.disabled = false;
                 minerSpinner.style.display = 'none';
             }
@@ -931,7 +955,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (data.success) {
                         loadVoiceDropdownAndGallery();
                     } else {
-                        alert('Lỗi lưu giọng: ' + data.error);
+                        alert('Lỗi lưu giọng: ' + getErrorMessage(data));
                     }
                 } catch (err) {
                     alert('Lỗi kết nối: ' + err.message);
@@ -996,7 +1020,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (data.success) {
                         loadVoiceDropdownAndGallery();
                     } else {
-                        alert('Lỗi đổi tên: ' + data.error);
+                        alert('Lỗi đổi tên: ' + getErrorMessage(data));
                     }
                 } catch (err) {
                     alert('Lỗi: ' + err.message);
@@ -1021,7 +1045,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         loadVoiceDropdownAndGallery();
                     } else {
-                        alert('Lỗi xóa: ' + data.error);
+                        alert('Lỗi xóa: ' + getErrorMessage(data));
                     }
                 } catch (err) {
                     alert('Lỗi: ' + err.message);
@@ -1133,7 +1157,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (resData.success) {
                                 loadHistory();
                             } else {
-                                alert('Lỗi đổi tên: ' + resData.error);
+                                alert('Lỗi đổi tên: ' + getErrorMessage(resData));
                             }
                         } catch (err) {
                             alert('Lỗi đổi tên file: ' + err.message);
@@ -1179,7 +1203,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (resData.success) {
                         loadHistory();
                     } else {
-                        alert('Lỗi xóa đồng loạt: ' + resData.error);
+                        alert('Lỗi xóa đồng loạt: ' + getErrorMessage(resData));
                     }
                 } catch (err) {
                     alert('Lỗi kết nối: ' + err.message);

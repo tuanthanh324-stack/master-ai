@@ -12,9 +12,9 @@ from logger import logger
 
 # Gemini models - ưu tiên hạn ngạch cao & tốc độ nhanh nhất
 GEMINI_MODELS = [
-    "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-flash-latest"
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b"
 ]
 
 # Prompt templates
@@ -26,6 +26,11 @@ PROMPTS = {
         "2. Sửa lỗi chính tả, thêm dấu câu\n"
         "3. Ngắt đoạn rõ ràng\n\n"
         "Nội dung:\n{text}"
+    ),
+    "rewrite": (
+        "Bạn là tác giả văn học và chuyên gia phóng tác kịch bản video. Hãy viết lại đoạn văn dưới đây "
+        "thành một bài văn phóng tác sinh động, hấp dẫn. Loại bỏ hoàn toàn các nhãn nhiễu như [âm nhạc], [tiếng cười], >>... "
+        "Hãy tự động bổ sung chi tiết bối cảnh, miêu tả khung cảnh xung quanh, nhân vật, cảm xúc và nâng cấp ngôn từ cuốn hút nhất:\n\n{text}"
     ),
     "summary": (
         "Tóm tắt đoạn văn sau thành các ý chính ngắn gọn, dễ hiểu:\n\n{text}"
@@ -202,18 +207,25 @@ def process(text: str, language: str = "Vietnamese",
         prompt = prompt_template.replace("{text}", text)
         prompt = prompt.replace("{lang}", target_lang)
 
-    # 1. Primary Provider: Google Gemini APIs with optimized generationConfig
+    # 1. Primary Provider: Google Gemini APIs with optimized generationConfig & permissive SafetySettings
     if api_key:
+        safety_settings = [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ]
         for model in GEMINI_MODELS:
             try:
                 logger.debug(f"Trying Gemini model: {model}")
                 data = {
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {
-                        "temperature": 0.2,
-                        "topP": 0.8,
-                        "maxOutputTokens": 1024
-                    }
+                        "temperature": 0.4,
+                        "topP": 0.9,
+                        "maxOutputTokens": 8192
+                    },
+                    "safetySettings": safety_settings
                 }
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
@@ -226,8 +238,19 @@ def process(text: str, language: str = "Vietnamese",
                 with urllib.request.urlopen(req, timeout=Config.GEMINI_TIMEOUT) as resp:
                     response = json.loads(resp.read().decode("utf-8"))
 
-                output = response["candidates"][0]["content"]["parts"][0]["text"]
-                output = clean_output(output)
+                if "candidates" in response and response["candidates"]:
+                    cand = response["candidates"][0]
+                    if "content" in cand and "parts" in cand["content"] and cand["content"]["parts"]:
+                        output = cand["content"]["parts"][0].get("text", "")
+                        output = clean_output(output)
+                        if output:
+                            elapsed = time.time() - start_time
+                            word_count = len(output.split())
+                            logger.info(f"Gemini done in {elapsed:.1f}s: {word_count} words")
+                            return output, f"Thành công ({model}) | {word_count} từ"
+            except Exception as e:
+                logger.debug(f"Model {model} failed: {e}")
+                continue
                 elapsed = time.time() - start_time
                 word_count = len(output.split())
                 logger.info(f"Gemini done in {elapsed:.1f}s: {word_count} words")

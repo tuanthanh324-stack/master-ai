@@ -479,7 +479,8 @@ def download_audio_direct(url: str) -> Tuple[Optional[str], Optional[str], Optio
             return audio_path, None, actual_v if os.path.exists(actual_v) else None
 
     # 3. PLATFORM OPTIMIZATION: Universal yt-dlp Audio Priority Stream (YouTube, FB, IG, TikTok)
-    ffmpeg_loc = FFMPEG_DIR if os.path.exists(FFMPEG_DIR) else ""
+    ffmpeg_exe = get_ffmpeg()
+    ffmpeg_loc = os.path.dirname(ffmpeg_exe) if ffmpeg_exe and os.path.isabs(ffmpeg_exe) else ""
     
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -531,7 +532,6 @@ def download_audio_direct(url: str) -> Tuple[Optional[str], Optional[str], Optio
                         actual_v = os.path.join(TEMP_DIR, f"video_{session_id}.mp4")
                         return fp, extract_subtitle(session_id), actual_v if os.path.exists(actual_v) else None
                     elif fp.endswith((".m4a", ".webm", ".aac", ".opus", ".wav", ".ogg", ".mp4", ".mkv", ".flv", ".3gp")):
-                        ffmpeg_exe = FFMPEG_PATH if os.path.exists(FFMPEG_PATH) else "ffmpeg"
                         cmd = [
                             ffmpeg_exe, "-y", "-i", fp,
                             "-vn", "-acodec", "libmp3lame", "-q:a", "2",
@@ -567,7 +567,6 @@ def download_audio_direct(url: str) -> Tuple[Optional[str], Optional[str], Optio
                     if fp.endswith(".mp3"):
                         return fp, extract_subtitle(session_id), None
                     elif fp.endswith((".m4a", ".webm", ".aac", ".opus", ".wav", ".ogg", ".mp4", ".mkv")):
-                        ffmpeg_exe = FFMPEG_PATH if os.path.exists(FFMPEG_PATH) else "ffmpeg"
                         cmd = [
                             ffmpeg_exe, "-y", "-i", fp,
                             "-vn", "-acodec", "libmp3lame", "-q:a", "2",
@@ -657,12 +656,25 @@ def process_transcription(
     prompt_custom: str = "",
     prompt_mode: str = "verbatim"
 ) -> Dict[str, Any]:
-    url = (url or "").strip()
-    if not url:
-        return {"error": "Chưa nhập link video!"}
-
-    lang_map = {"Vietnamese": "vi", "English": "en", "Spanish": "es", "French": "fr", "German": "de"}
-    lang_code = lang_map.get(language, "vi")
+    # Direct Raw Text Script Input Guard (0.0s instant processing if text script is pasted)
+    if not url.startswith(("http://", "https://")) and len(url.split()) >= 3:
+        final_text = url
+        method = "Văn bản nhập trực tiếp (Trực tiếp 0.0s)"
+        word_count = len(final_text.split())
+        response = {
+            "method": method,
+            "word_count": word_count,
+            "raw_text": final_text,
+            "gemini_text": "",
+            "gemini_status": "",
+            "auto_cloned_voice": None
+        }
+        if auto_gemini and final_text:
+            api_key = get_gemini_key()
+            gem_out, gem_st = process_gemini(final_text, language, prompt_custom, api_key, prompt_mode)
+            response["gemini_text"] = gem_out
+            response["gemini_status"] = gem_st
+        return response
 
     # Step 1: Download Audio & Video via Bulletproof Downloader
     audio_path, sub_text, video_path = download_audio_direct(url)
@@ -796,6 +808,16 @@ def process_gemini(
     input_text = (input_text or "").strip()
     prompt_custom = (prompt_custom or "").strip()
 
+    # Auto-detect AIzaSy key pasted anywhere in inputs
+    if not api_key:
+        import re
+        for txt_source in [prompt_custom, input_text]:
+            if match := re.search(r'(AIzaSy[A-Za-z0-9_-]{33})', txt_source):
+                api_key = match.group(1)
+                from config_manager import set_gemini_key
+                set_gemini_key(api_key)
+                break
+
     if not input_text:
         return "Chưa có nội dung cần chuẩn hóa!", "ERROR"
 
@@ -850,18 +872,26 @@ def process_gemini(
                 f"Nội dung lời thoại thô:\n{input_text}"
             )
 
-    candidate_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest"]
+    candidate_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"]
     last_err = ""
 
     if api_key:
+        safety_settings = [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ]
         for idx, model_name in enumerate(candidate_models):
             try:
                 data = {
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {
-                        "temperature": 0.3,
+                        "temperature": 0.4,
+                        "topP": 0.9,
                         "maxOutputTokens": 8192
-                    }
+                    },
+                    "safetySettings": safety_settings
                 }
                 req = urllib.request.Request(
                     f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}",
@@ -879,6 +909,8 @@ def process_gemini(
                         output = cand["content"]["parts"][0].get("text", "").strip()
                 
                 if output:
+                    from gemini_processor import clean_output
+                    output = clean_output(output)
                     return output, f"Thành công ({model_name}) | {len(output.split())} từ"
             except Exception as err:
                 last_err = str(err)
