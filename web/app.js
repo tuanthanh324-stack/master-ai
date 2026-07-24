@@ -462,7 +462,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 75000);
+            const timeoutId = setTimeout(() => controller.abort(), 310000);
+            const clientApiKey = apiKeyInput.value.trim() || localStorage.getItem('gemini_api_key') || '';
 
             let res;
             try {
@@ -477,7 +478,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         use_sub: chkUseSub.checked,
                         auto_gemini: false,
                         prompt_custom: customPrompt.value.trim(),
-                        prompt_mode: selMode.value
+                        prompt_mode: selMode.value,
+                        api_key: clientApiKey
                     })
                 });
             } finally {
@@ -557,7 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
             stopLiveTimer(false);
             const isAbort = err.name === 'AbortError';
             const errMsg = isAbort 
-                ? 'Quá thời gian chờ server (Timeout 75s). Vui lòng thử lại hoặc dán Gemini API Key trong Cài đặt!' 
+                ? 'Quá thời gian chờ server (Timeout 300s). Vui lòng thử lại hoặc giảm chất lượng/độ dài video!' 
                 : err.message;
             updateProgress(0, `❌ Lỗi: ${errMsg}`, 'error');
         } finally {

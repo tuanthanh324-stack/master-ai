@@ -318,6 +318,7 @@ class MasterAIHandler(SimpleHTTPRequestHandler):
                 auto_gemini = req_data.get('auto_gemini', True)
                 prompt_custom = req_data.get('prompt_custom', '')
                 prompt_mode = req_data.get('prompt_mode', 'verbatim')
+                api_key = req_data.get('api_key', '')
 
                 result = process_transcription(
                     url=url,
@@ -326,7 +327,8 @@ class MasterAIHandler(SimpleHTTPRequestHandler):
                     use_sub=use_sub,
                     auto_gemini=auto_gemini,
                     prompt_custom=prompt_custom,
-                    prompt_mode=prompt_mode
+                    prompt_mode=prompt_mode,
+                    api_key=api_key
                 )
                 self._send_json(result)
 

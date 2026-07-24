@@ -654,7 +654,8 @@ def process_transcription(
     use_sub: bool = True,
     auto_gemini: bool = True,
     prompt_custom: str = "",
-    prompt_mode: str = "verbatim"
+    prompt_mode: str = "verbatim",
+    api_key: str = ""
 ) -> Dict[str, Any]:
     # Direct Raw Text Script Input Guard (0.0s instant processing if text script is pasted)
     if not url.startswith(("http://", "https://")) and len(url.split()) >= 3:
@@ -670,8 +671,8 @@ def process_transcription(
             "auto_cloned_voice": None
         }
         if auto_gemini and final_text:
-            api_key = get_gemini_key()
-            gem_out, gem_st = process_gemini(final_text, language, prompt_custom, api_key, prompt_mode)
+            gem_key = api_key if api_key else get_gemini_key()
+            gem_out, gem_st = process_gemini(final_text, language, prompt_custom, gem_key, prompt_mode)
             response["gemini_text"] = gem_out
             response["gemini_status"] = gem_st
         return response
@@ -707,7 +708,7 @@ def process_transcription(
 
     # TIER 3A: GEMINI MULTIMODAL AUDIO ASR (1.5s Ultra-Fast Cloud Speech AI)
     if not final_text and audio_path and os.path.exists(audio_path):
-        gem_key = get_gemini_key()
+        gem_key = api_key if api_key else get_gemini_key()
         if gem_key:
             gem_asr = transcribe_audio_with_gemini(audio_path, gem_key)
             if gem_asr:
@@ -738,7 +739,7 @@ def process_transcription(
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(_run_whisper)
-                result = future.result(timeout=60.0)
+                result = future.result(timeout=300.0)
 
             whisper_text = result.get("text", "").strip()
             final_text = whisper_text
