@@ -294,6 +294,15 @@ document.addEventListener('DOMContentLoaded', () => {
     txtGemini.addEventListener('input', () => updateWordCount(txtGemini, geminiWordCount));
 
     async function callServerGemini(rawText, apiKey) {
+        const normalizedText = rawText.trim();
+        const cacheKey = `gem_cache_${selMode.value}_${selLang.value}_${normalizedText.length}_${btoa(unescape(encodeURIComponent(normalizedText.substring(0, 50))))}_${btoa(unescape(encodeURIComponent(customPrompt.value.trim()))).substring(0, 50)}`;
+        
+        const cachedResult = localStorage.getItem(cacheKey);
+        if (cachedResult) {
+            console.log("Gemini server-fallback loaded from cache:", cacheKey);
+            return { text: cachedResult, status: "Thành công (Server Fallback | Đã lấy từ bộ nhớ đệm Cache 0.0s)" };
+        }
+
         const gemController = new AbortController();
         const gemTimeoutId = setTimeout(() => gemController.abort(), 45000);
         try {
@@ -310,13 +319,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
             });
             if (!gemRes.ok) throw new Error(`Server phản hồi lỗi HTTP ${gemRes.status}`);
-            return await gemRes.json();
+            const data = await gemRes.json();
+            if (data && data.text && data.status && !data.status.includes("ERROR")) {
+                try {
+                    localStorage.setItem(cacheKey, data.text);
+                } catch(e) {
+                    clearOldGeminiCache();
+                    localStorage.setItem(cacheKey, data.text);
+                }
+            }
+            return data;
         } finally {
             clearTimeout(gemTimeoutId);
         }
     }
 
+    function clearOldGeminiCache() {
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('gem_cache_')) {
+                localStorage.removeItem(k);
+            }
+        }
+    }
+
     async function runGeminiClientSide(inputText, language, promptCustom, apiKey, promptMode) {
+        const normalizedText = inputText.trim();
+        const cacheKey = `gem_cache_${promptMode}_${language}_${normalizedText.length}_${btoa(unescape(encodeURIComponent(normalizedText.substring(0, 50))))}_${btoa(unescape(encodeURIComponent(promptCustom))).substring(0, 50)}`;
+        
+        const cachedResult = localStorage.getItem(cacheKey);
+        if (cachedResult) {
+            console.log("Gemini client-side loaded from cache:", cacheKey);
+            return { text: cachedResult, status: "Thành công (Direct Client-Side AI | Đã lấy từ bộ nhớ đệm Cache 0.0s)" };
+        }
+
         const langMap = {"Vietnamese": "tiếng Việt", "English": "English", "Spanish": "Español", "French": "Français", "German": "Deutsch"};
         const targetLang = langMap[language] || "tiếng Việt";
         
@@ -369,6 +405,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await res.json();
                 if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
                     const text = data.candidates[0].content.parts[0].text.trim();
+                    try {
+                        localStorage.setItem(cacheKey, text);
+                    } catch(e) {
+                        clearOldGeminiCache();
+                        localStorage.setItem(cacheKey, text);
+                    }
                     return { text, status: `Thành công (Direct Client-Side AI | ${model})` };
                 }
             } catch (err) {
