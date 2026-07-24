@@ -513,7 +513,6 @@ document.addEventListener('DOMContentLoaded', () => {
             updateProgress(85, `🤖 STAGE 2: Gemini AI đang chuẩn hóa bài viết...`, 'info');
             
             let gemData;
-            const clientApiKey = apiKeyInput.value.trim() || localStorage.getItem('gemini_api_key') || '';
             
             if (clientApiKey) {
                 try {
