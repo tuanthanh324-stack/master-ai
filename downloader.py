@@ -440,6 +440,55 @@ def download_audio(url: str) -> Tuple[Optional[str], Optional[str]]:
     except Exception as e:
         logger.error(f"CLI fallback failed: {e}")
 
+    # === COBALT API FALLBACK ENGINE (Specially optimized for Cloud/Render datacenter bypass!) ===
+    try:
+        logger.info("Attempting Cobalt API fallback for audio download...")
+        payload = {
+            "url": clean_url,
+            "isAudioOnly": True,
+            "aFormat": "mp3"
+        }
+        cobalt_endpoints = [
+            "https://api.cobalt.tools/api/json",
+            "https://cobalt.tools/api/json",
+            "https://co.wuk.sh/api/json"
+        ]
+        download_url = None
+        for endpoint in cobalt_endpoints:
+            try:
+                req_cob = urllib.request.Request(
+                    endpoint,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Accept": "application/json",
+                        "Content-Type": "application/json",
+                        "User-Agent": "Mozilla/5.0"
+                    },
+                    method="POST"
+                )
+                with urllib.request.urlopen(req_cob, timeout=12) as r_cob:
+                    res_json = json.loads(r_cob.read().decode("utf-8"))
+                    if res_json.get("status") in ("redirect", "stream") and res_json.get("url"):
+                        download_url = res_json.get("url")
+                        break
+            except Exception as cob_err:
+                logger.warning(f"Cobalt mirror {endpoint} failed: {cob_err}")
+                continue
+                
+        if download_url:
+            logger.info(f"Cobalt returned download link: {download_url[:60]}")
+            req_dl = urllib.request.Request(download_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req_dl, timeout=25) as r_dl:
+                with open(audio_path, "wb") as f_dl:
+                    f_dl.write(r_dl.read())
+                    
+            if Path(audio_path).exists() and Path(audio_path).stat().st_size > 1000:
+                elapsed = time.time() - start_time
+                logger.info(f"🎉 Cobalt API fallback download succeeded in {elapsed:.1f}s!")
+                return audio_path, subtitle_text
+    except Exception as cob_ex:
+        logger.error(f"Cobalt fallback failed: {cob_ex}")
+
     elapsed = time.time() - start_time
     logger.error(f"Download failed after {elapsed:.1f}s")
     return None, subtitle_text  # Return subtitle if we got it
