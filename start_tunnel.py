@@ -69,6 +69,23 @@ def main():
             print("Vui lòng chạy app local bằng file ▶️ CHẠY MÁY CHỦ BẢO MẬT (SERVER).bat thay thế.")
             sys.exit(1)
 
+    # 1B. Cleanup any old processes running on port 7860 to prevent zombie port locks
+    try:
+        if os.name == 'nt':
+            cmd_netstat = "netstat -ano | findstr :7860"
+            out = subprocess.check_output(cmd_netstat, shell=True, text=True)
+            pids = set()
+            for line in out.strip().split('\n'):
+                parts = line.split()
+                if len(parts) >= 5 and ":7860" in parts[1]:
+                    pids.add(parts[-1])
+            for pid in pids:
+                if pid != '0':
+                    subprocess.run(f"taskkill /F /PID {pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    print(f"🧹 Đã dọn dẹp tiến trình cũ chạy ẩn trên cổng 7860 (PID: {pid})")
+    except Exception:
+        pass
+
     # 2. Start local FastAPI/HTTP server in background
     print("⚡ Đang khởi động Server Local (Cổng 7860)...")
     server_process = subprocess.Popen(
